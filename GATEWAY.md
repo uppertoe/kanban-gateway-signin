@@ -74,7 +74,7 @@ All new files carry a header saying that they are a local modification.
 
 ## Keeping up with upstream
 
-The modification lives on the `gateway` branch as a small series of commits on
+The modification lives on `main` as a small series of commits on
 top of an upstream release tag. To move to a new release, rebase the branch
 onto the new tag, run the server tests and the end-to-end check, and publish
 the image.
