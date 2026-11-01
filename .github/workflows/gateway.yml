@@ -40,7 +40,13 @@ jobs:
             sh -c 'npm ci --ignore-scripts --no-audit --no-fund >/dev/null && npx mocha test/utils/gateway-identity.test.js'
 
       - name: Build image
-        run: docker build -t kanban-gateway-signin:ci .
+        # The OCI labels let deployments trace the image to its commit
+        # (rch-server-image's check-image-provenance.sh reads them).
+        run: |
+          docker build -t kanban-gateway-signin:ci \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            .
 
       - name: End-to-end check
         run: bash gateway-e2e/run.sh kanban-gateway-signin:ci
