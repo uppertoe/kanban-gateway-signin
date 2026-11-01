@@ -3,15 +3,15 @@
  * Licensed under the Fair Use License: https://github.com/plankanban/planka/blob/master/LICENSE.md
  */
 
-import { call, put, select } from 'redux-saga/effects';
+import { call, put, select } from "redux-saga/effects";
 
-import request from '../request';
-import requests from '../requests';
-import selectors from '../../../selectors';
-import actions from '../../../actions';
-import api from '../../../api';
-import i18n from '../../../i18n';
-import { removeAccessToken } from '../../../utils/access-token-storage';
+import request from "../request";
+import requests from "../requests";
+import selectors from "../../../selectors";
+import actions from "../../../actions";
+import api from "../../../api";
+import i18n from "../../../i18n";
+import { removeAccessToken } from "../../../utils/access-token-storage";
 
 export function* initializeCore() {
   const { item: bootstrap } = yield call(request, api.getBootstrap); // TODO: handle error
@@ -116,10 +116,18 @@ export function* updateHomeView(value) {
 }
 
 export function* logout(revokeAccessToken) {
-  // Gateway sign-in (local modification): signing out of PLANKA alone would
-  // sign straight back in, so hand over to the gateway's sign-out as well.
+  // Gateway sign-in (local modification): a deliberate sign-out of PLANKA
+  // alone would sign straight back in, so it hands over to the gateway's
+  // sign-out as well. An involuntary one (the server refused the stored
+  // token, or no token was found) must not: the person is still signed in at
+  // the gateway, so the login page simply signs them in afresh. Every caller
+  // that acts on a person's choice passes revokeAccessToken = true.
   const bootstrap = yield select(selectors.selectBootstrap);
-  const gatewayLogoutUrl = bootstrap && bootstrap.gateway && bootstrap.gateway.logoutUrl;
+  const gatewayLogoutUrl =
+    revokeAccessToken &&
+    bootstrap &&
+    bootstrap.gateway &&
+    bootstrap.gateway.logoutUrl;
 
   yield call(removeAccessToken);
 

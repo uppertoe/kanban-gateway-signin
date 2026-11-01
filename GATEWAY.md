@@ -24,7 +24,10 @@ headers on any request without the right secret.
 4. On every later request PLANKA checks that the gateway still vouches for the
    same email. If it does not, the session is treated as signed out and the
    login page signs in afresh.
-5. Signing out of PLANKA also sends the browser to the gateway's sign-out page.
+5. Signing out of PLANKA also sends the browser to the gateway's sign-out
+   page. Only a sign-out the person chose does this. When PLANKA refuses a
+   stored token instead, for example one issued by an earlier PLANKA version,
+   the client drops the token and the login page signs in afresh.
 
 The role is set by group membership at every sign-in, so it cannot be changed
 in PLANKA's user screen. People who belong to none of the configured groups
