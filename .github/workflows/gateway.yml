@@ -6,7 +6,8 @@
 # then run the end-to-end check (gateway-e2e/run.sh), which upgrades a real
 # upstream 2.1.1 database to this image and exercises gateway sign-in.
 # Pushes to main (and manual runs on main) then publish to GHCR as
-#   <upstream version>-gw.<run number>, plus sha-<commit>.
+#   <upstream version>-gw.<run number>, sha-<commit> and latest. Deployments
+# pin latest@sha256 so Renovate can move the digest.
 
 name: Gateway build
 
@@ -53,7 +54,7 @@ jobs:
           version=$(node -p "require('./package.json').version")
           tag="${version}-gw.${GITHUB_RUN_NUMBER}"
           echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          for t in "$tag" "sha-${GITHUB_SHA::12}"; do
+          for t in "$tag" "sha-${GITHUB_SHA::12}" latest; do
             docker tag kanban-gateway-signin:ci "$IMAGE:$t"
             docker push "$IMAGE:$t"
           done
