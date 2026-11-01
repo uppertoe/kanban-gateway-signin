@@ -66,6 +66,12 @@ All new files carry a header saying that they are a local modification.
   no longer deactivates accounts that used single sign-on. Those accounts keep
   signing in, matched by email.
 
+## Other changes
+
+- The "Discover PLANKA Pro" promotional banner at the top of the page is not
+  shown (`client/src/components/common/Fixed/Fixed.jsx`). No licensing or
+  copyright notice is affected.
+
 ## Keeping up with upstream
 
 The modification lives on the `gateway` branch as a small series of commits on
