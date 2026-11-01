@@ -69,8 +69,10 @@ All new files carry a header saying that they are a local modification.
 ## Other changes
 
 - The "Discover PLANKA Pro" promotional banner at the top of the page is not
-  shown (`client/src/components/common/Fixed/Fixed.jsx`). No licensing or
-  copyright notice is affected.
+  shown (`client/src/components/common/Fixed/Fixed.jsx`), and nor is the
+  "Discover PLANKA Pro" / "Upgrade team to Pro" item in the user menu
+  (`client/src/components/users/UserActionsStep/UserActionsStep.jsx`). No
+  licensing or copyright notice is affected.
 
 ## Keeping up with upstream
 
