@@ -246,6 +246,12 @@ module.exports = {
       throw Errors.NOT_ENOUGH_RIGHTS;
     }
 
+    // Gateway sign-in (local modification): the role follows gateway group
+    // membership and is reset at every sign-in, so it is not edited here.
+    if (sails.config.custom.gatewayAuthEnabled && !_.isUndefined(inputs.role)) {
+      throw Errors.NOT_ENOUGH_RIGHTS;
+    }
+
     let user = await User.qm.getOneById(inputs.id);
 
     if (!user) {

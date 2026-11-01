@@ -16,14 +16,21 @@ export function* initializeLogin() {
   const { item: bootstrap } = yield call(api.getBootstrap); // TODO: handle error
 
   yield put(actions.initializeLogin(bootstrap));
+
+  // Gateway sign-in (local modification): the gateway has already identified
+  // the person, so sign in straight away instead of waiting for the form.
+  if (bootstrap && bootstrap.gateway) {
+    // eslint-disable-next-line no-use-before-define
+    yield call(authenticateWithGateway);
+  }
 }
 
-export function* authenticate(data) {
+export function* authenticate(data, createAccessToken = api.createAccessToken) {
   yield put(actions.authenticate(data));
 
   let accessToken;
   try {
-    ({ item: accessToken } = yield call(api.createAccessToken, data));
+    ({ item: accessToken } = yield call(createAccessToken, data));
   } catch (error) {
     let terms;
     if (error.step === AccessTokenSteps.ACCEPT_TERMS) {
@@ -36,6 +43,10 @@ export function* authenticate(data) {
 
   yield call(setAccessToken, accessToken);
   yield put(actions.authenticate.success(accessToken));
+}
+
+export function* authenticateWithGateway() {
+  yield call(authenticate, {}, () => api.exchangeWithGateway());
 }
 
 export function* clearAuthenticateError() {
@@ -134,6 +145,7 @@ export function* cancelTotpChallenge() {
 export default {
   initializeLogin,
   authenticate,
+  authenticateWithGateway,
   clearAuthenticateError,
   acceptTerms,
   cancelTerms,

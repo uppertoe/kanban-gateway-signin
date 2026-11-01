@@ -11,9 +11,29 @@
  * @docs        :: https://sailsjs.com/docs/concepts/extending-sails/hooks
  */
 
+const { readGatewayIdentity } = require('../../../utils/gateway-identity');
+
 module.exports = function defineCurrentUserHook(sails) {
   const TOKEN_PATTERN = /^Bearer /;
   const API_KEY_HEADER_NAME = 'x-api-key';
+
+  // Gateway sign-in (local modification): a PLANKA session counts only while
+  // the gateway still vouches for the same person. If someone signs out of the
+  // gateway and another person signs in on the same browser, the old PLANKA
+  // session is treated as signed out and the client signs in afresh. Socket
+  // requests carry no per-request headers; the socket handshake itself has
+  // already passed the gateway.
+  const isSessionVouchedFor = (req, user) => {
+    const { gatewayAuthEnabled, gatewayAuthSecret } = sails.config.custom;
+
+    if (!gatewayAuthEnabled || req.isSocket) {
+      return true;
+    }
+
+    const identity = readGatewayIdentity(req.headers, gatewayAuthSecret);
+
+    return !!identity && identity.email === user.email.toLowerCase();
+  };
 
   const getSessionAndUserByAccessToken = async (accessToken, httpOnlyToken) => {
     let payload;
@@ -87,7 +107,7 @@ module.exports = function defineCurrentUserHook(sails) {
                   httpOnlyToken,
                 );
 
-                if (sessionAndUser) {
+                if (sessionAndUser && isSessionVouchedFor(req, sessionAndUser.user)) {
                   const { session, user } = sessionAndUser;
 
                   if (user.language) {
@@ -134,7 +154,7 @@ module.exports = function defineCurrentUserHook(sails) {
                 httpOnlyToken,
               );
 
-              if (sessionAndUser) {
+              if (sessionAndUser && isSessionVouchedFor(req, sessionAndUser.user)) {
                 const { session, user } = sessionAndUser;
 
                 Object.assign(req, {

@@ -33,6 +33,14 @@ module.exports = {
       data.isDemoMode = true;
     }
 
+    // Gateway sign-in (local modification): tells the client to sign in from
+    // the gateway identity instead of showing the password form.
+    if (sails.config.custom.gatewayAuthEnabled) {
+      data.gateway = {
+        logoutUrl: sails.config.custom.gatewayLogoutUrl,
+      };
+    }
+
     return data;
   },
 };

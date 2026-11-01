@@ -9,11 +9,18 @@ import { Loader } from 'semantic-ui-react';
 
 import selectors from '../../../selectors';
 import Content from './Content';
+import GatewayContent from './GatewayContent';
 
 const Login = React.memo(() => {
   const isInitializing = useSelector(selectors.selectIsInitializing);
+  const bootstrap = useSelector(selectors.selectBootstrap);
 
-  return isInitializing ? <Loader active size="massive" /> : <Content />;
+  if (isInitializing) {
+    return <Loader active size="massive" />;
+  }
+
+  // Gateway sign-in (local modification, see GATEWAY.md).
+  return bootstrap && bootstrap.gateway ? <GatewayContent /> : <Content />;
 });
 
 export default Login;

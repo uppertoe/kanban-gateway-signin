@@ -116,6 +116,11 @@ export function* updateHomeView(value) {
 }
 
 export function* logout(revokeAccessToken) {
+  // Gateway sign-in (local modification): signing out of PLANKA alone would
+  // sign straight back in, so hand over to the gateway's sign-out as well.
+  const bootstrap = yield select(selectors.selectBootstrap);
+  const gatewayLogoutUrl = bootstrap && bootstrap.gateway && bootstrap.gateway.logoutUrl;
+
   yield call(removeAccessToken);
 
   if (revokeAccessToken) {
@@ -129,6 +134,10 @@ export function* logout(revokeAccessToken) {
   }
 
   yield put(actions.logout()); // TODO: next url
+
+  if (gatewayLogoutUrl) {
+    window.location.assign(gatewayLogoutUrl);
+  }
 }
 
 export default {

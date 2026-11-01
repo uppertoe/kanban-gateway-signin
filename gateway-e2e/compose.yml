@@ -1,0 +1,23 @@
+services:
+  db:
+    image: postgres:18-alpine
+    environment: [POSTGRES_DB=planka, POSTGRES_USER=planka, POSTGRES_PASSWORD=pw]
+    healthcheck: {test: ["CMD-SHELL", "pg_isready -U planka"], interval: 2s, retries: 30}
+  planka:
+    image: ${PLANKA_IMAGE}
+    depends_on: {db: {condition: service_healthy}}
+    ports: ["127.0.0.1:13370:1337"]
+    environment:
+      - BASE_URL=http://localhost:13370
+      - DATABASE_URL=postgresql://planka:pw@db/planka
+      - SECRET_KEY=e2e-secret-key-not-for-production-use-0123456789
+      - GATEWAY_AUTH=true
+      - GATEWAY_AUTH_SECRET=e2e-gateway-secret-0123456789abcdef
+      - GATEWAY_ADMIN_GROUPS=planka-admins
+      - GATEWAY_PROJECT_OWNER_GROUPS=planka-owners
+      - GATEWAY_BOARD_USER_GROUPS=planka-users
+      - GATEWAY_LOGOUT_URL=https://auth.example.org/logout?rd=http://localhost:13370/
+      - DEFAULT_ADMIN_EMAIL=admin@example.org
+      - DEFAULT_ADMIN_PASSWORD=seed-password-123
+      - DEFAULT_ADMIN_NAME=Seed Admin
+      - DEFAULT_ADMIN_USERNAME=seedadmin

@@ -31,6 +31,43 @@ const envToArray = (value) => (value ? value.split(',') : []);
 const baseUrl = envToArray(process.env.BASE_URL)[0];
 const parsedBasedUrl = new URL(baseUrl);
 
+// Gateway sign-in (local modification, see GATEWAY.md). When enabled, PLANKA
+// trusts the identity headers of the authenticating reverse proxy in front of
+// it, and password sign-in is switched off.
+const gatewayIdentity = require('../utils/gateway-identity');
+
+const gatewayConfig = (() => {
+  const gatewayAuthEnabled = process.env.GATEWAY_AUTH === 'true';
+
+  if (!gatewayAuthEnabled) {
+    return { gatewayAuthEnabled };
+  }
+
+  const gatewayAuthSecret = process.env.GATEWAY_AUTH_SECRET || '';
+  if (gatewayAuthSecret.length < gatewayIdentity.MIN_SECRET_LENGTH) {
+    throw new Error(
+      `GATEWAY_AUTH=true needs GATEWAY_AUTH_SECRET of at least ${gatewayIdentity.MIN_SECRET_LENGTH} characters`,
+    );
+  }
+
+  const roleGroups = {
+    admin: gatewayIdentity.parseList(process.env.GATEWAY_ADMIN_GROUPS),
+    projectOwner: gatewayIdentity.parseList(process.env.GATEWAY_PROJECT_OWNER_GROUPS),
+    boardUser: gatewayIdentity.parseList(process.env.GATEWAY_BOARD_USER_GROUPS),
+  };
+
+  if (Object.values(roleGroups).every((groups) => groups.length === 0)) {
+    throw new Error('GATEWAY_AUTH=true needs at least one of the GATEWAY_*_GROUPS settings');
+  }
+
+  return {
+    gatewayAuthEnabled,
+    gatewayAuthSecret,
+    gatewayRoleGroups: roleGroups,
+    gatewayLogoutUrl: process.env.GATEWAY_LOGOUT_URL || null,
+  };
+})();
+
 module.exports.custom = {
   /**
    *
@@ -91,4 +128,8 @@ module.exports.custom = {
   termsType: process.env.TERMS_TYPE || 'custom',
   customerPanelUrl: process.env.CUSTOMER_PANEL_URL,
   demoMode: process.env.DEMO_MODE === 'true',
+
+  /* Gateway sign-in (local modification, see GATEWAY.md) */
+
+  ...gatewayConfig,
 };

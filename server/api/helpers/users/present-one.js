@@ -61,6 +61,14 @@ module.exports = {
           lockedFieldNames.push('email', 'password', 'name', 'role', 'username');
         }
 
+        // Gateway sign-in (local modification): the gateway owns the email the
+        // account is matched by and the role, and there is no password.
+        if (sails.config.custom.gatewayAuthEnabled) {
+          lockedFieldNames.push(
+            ...['email', 'password', 'role'].filter((name) => !lockedFieldNames.includes(name)),
+          );
+        }
+
         Object.assign(data, {
           isDefaultAdmin,
           lockedFieldNames,

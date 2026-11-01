@@ -10,6 +10,10 @@ import http from './http';
 const createAccessToken = (data, headers) =>
   http.post('/access-tokens?withHttpOnlyToken=true', data, headers);
 
+// Gateway sign-in (local modification, see GATEWAY.md).
+const exchangeWithGateway = (headers) =>
+  http.post('/access-tokens/exchange-with-gateway?withHttpOnlyToken=true', undefined, headers);
+
 const verifyTotp = (data, headers) =>
   http.post('/access-tokens/verify-totp?withHttpOnlyToken=true', data, headers);
 
@@ -23,6 +27,7 @@ const deleteCurrentAccessToken = (headers) => http.delete('/access-tokens/me', u
 
 export default {
   createAccessToken,
+  exchangeWithGateway,
   verifyTotp,
   acceptTerms,
   revokePendingToken,

@@ -1,3 +1,5 @@
+> **Modified version.** This repository is a modified version of PLANKA with gateway sign-in added. It is not made or supported by PLANKA Software GmbH. See [GATEWAY.md](GATEWAY.md) for what has changed.
+
 <div align="center">
 
   ![Logo](https://raw.githubusercontent.com/plankanban/planka/master/assets/logo.png)

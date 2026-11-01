@@ -13,11 +13,15 @@
  * information about which accounts were externally managed are gone for good.
  */
 
-module.exports.up = async (knex) => {
-  await knex('user_account').where('is_sso_user', true).update({
-    is_deactivated: true,
-  });
+/*
+ * Local modification (gateway sign-in, see GATEWAY.md): accounts that signed in
+ * through an identity provider are NOT deactivated. With gateway sign-in they
+ * keep signing in, matched by email, so the deactivation would only lock out
+ * every existing user. The schema change is kept so that later upstream
+ * migrations apply unchanged.
+ */
 
+module.exports.up = async (knex) => {
   await knex.schema.dropTable('identity_provider_user');
 
   return knex.schema.alterTable('user_account', (table) => {
