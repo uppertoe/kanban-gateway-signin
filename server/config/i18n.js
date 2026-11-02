@@ -27,6 +27,7 @@ module.exports.i18n = {
     'da-DK',
     'de-DE',
     'el-GR',
+    'en-AU',
     'en-GB',
     'en-US',
     'es-ES',
