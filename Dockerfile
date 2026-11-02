@@ -1,5 +1,5 @@
 # Stage 1: Server build
-FROM node:24-alpine AS server
+FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS server
 
 RUN apk -U upgrade \
   && apk add build-base python3 --no-cache
@@ -13,7 +13,7 @@ RUN  npm install \
   && npm prune --production
 
 # Stage 2: Client build
-FROM node:24 AS client
+FROM node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 AS client
 
 WORKDIR /app
 
@@ -24,7 +24,7 @@ RUN npm install npm --global \
   && INDEX_FORMAT=ejs DISABLE_ESLINT_PLUGIN=true npm run build
 
 # Stage 3: Final image
-FROM node:24-alpine
+FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85
 
 RUN apk -U upgrade \
   && apk add bash python3 squid --no-cache
