@@ -12,6 +12,7 @@ import csCZ from './cs-CZ';
 import daDK from './da-DK';
 import deDE from './de-DE';
 import elGR from './el-GR';
+import enAU from './en-AU';
 import enGB from './en-GB';
 import enUS from './en-US';
 import esES from './es-ES';
@@ -49,6 +50,7 @@ const locales = [
   daDK,
   deDE,
   elGR,
+  enAU,
   enGB,
   enUS,
   esES,
