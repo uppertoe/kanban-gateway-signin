@@ -11,28 +11,64 @@
  * @docs        :: https://sailsjs.com/docs/concepts/extending-sails/hooks
  */
 
-const { readGatewayIdentity } = require('../../../utils/gateway-identity');
+const { readGatewayIdentity, resolveVouchedRole } = require('../../../utils/gateway-identity');
 
 module.exports = function defineCurrentUserHook(sails) {
   const TOKEN_PATTERN = /^Bearer /;
   const API_KEY_HEADER_NAME = 'x-api-key';
 
   // Gateway sign-in (local modification): a PLANKA session counts only while
-  // the gateway still vouches for the same person. If someone signs out of the
-  // gateway and another person signs in on the same browser, the old PLANKA
-  // session is treated as signed out and the client signs in afresh. Socket
-  // requests carry no per-request headers; the socket handshake itself has
-  // already passed the gateway.
-  const isSessionVouchedFor = (req, user) => {
-    const { gatewayAuthEnabled, gatewayAuthSecret } = sails.config.custom;
+  // the gateway still vouches for the same person, and the person's role
+  // follows their gateway groups on every request rather than only at sign-in.
+  // Returns the user to treat as signed in, or null to treat the request as
+  // signed out (the client then signs in afresh).
+  const applyGatewayIdentity = async (req, user) => {
+    const { gatewayAuthEnabled, gatewayAuthSecret, gatewayRoleGroups } = sails.config.custom;
 
-    if (!gatewayAuthEnabled || req.isSocket) {
-      return true;
+    if (!gatewayAuthEnabled) {
+      return user;
+    }
+
+    if (req.isSocket) {
+      // The headers of a socket request come from the client, so only the
+      // handshake headers can be trusted: they passed through the gateway when
+      // the socket connected. They describe the gateway at that moment, so a
+      // role that no longer matches the account means the connection is stale.
+      // Writing that role back could undo a newer change, so the request is
+      // refused instead and the client signs in again on a new connection.
+      const { handshake } = req.socket || {};
+      const identity = readGatewayIdentity(handshake && handshake.headers, gatewayAuthSecret);
+
+      if (!identity) {
+        return user;
+      }
+
+      return resolveVouchedRole(identity, user.email, gatewayRoleGroups) === user.role
+        ? user
+        : null;
     }
 
     const identity = readGatewayIdentity(req.headers, gatewayAuthSecret);
+    const role = resolveVouchedRole(identity, user.email, gatewayRoleGroups);
 
-    return !!identity && identity.email === user.email.toLowerCase();
+    if (!role) {
+      return null;
+    }
+
+    if (role === user.role) {
+      return user;
+    }
+
+    try {
+      return await sails.helpers.users.applyGatewayRole.with({
+        record: user,
+        role,
+        request: req,
+      });
+    } catch (error) {
+      sails.log.error(`Gateway role change failed for ${user.email}: ${error}`);
+      return null;
+    }
   };
 
   const getSessionAndUserByAccessToken = async (accessToken, httpOnlyToken) => {
@@ -107,8 +143,11 @@ module.exports = function defineCurrentUserHook(sails) {
                   httpOnlyToken,
                 );
 
-                if (sessionAndUser && isSessionVouchedFor(req, sessionAndUser.user)) {
-                  const { session, user } = sessionAndUser;
+                const user =
+                  sessionAndUser && (await applyGatewayIdentity(req, sessionAndUser.user));
+
+                if (user) {
+                  const { session } = sessionAndUser;
 
                   if (user.language) {
                     req.setLocale(user.language);
@@ -154,8 +193,10 @@ module.exports = function defineCurrentUserHook(sails) {
                 httpOnlyToken,
               );
 
-              if (sessionAndUser && isSessionVouchedFor(req, sessionAndUser.user)) {
-                const { session, user } = sessionAndUser;
+              const user = sessionAndUser && (await applyGatewayIdentity(req, sessionAndUser.user));
+
+              if (user) {
+                const { session } = sessionAndUser;
 
                 Object.assign(req, {
                   currentSession: session,

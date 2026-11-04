@@ -37,7 +37,7 @@ jobs:
       - name: Gateway unit tests
         run: |
           docker run --rm -v "$PWD/server:/app" -w /app node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 \
-            sh -c 'npm ci --ignore-scripts --no-audit --no-fund >/dev/null && npx mocha test/utils/gateway-identity.test.js'
+            sh -c 'npm ci --ignore-scripts --no-audit --no-fund >/dev/null && npx mocha test/utils/gateway-identity.test.js test/hooks/current-user-gateway.test.js'
 
       - name: Build image
         # The OCI labels let deployments trace the image to its commit
