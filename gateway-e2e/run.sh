@@ -39,7 +39,7 @@ c=$(code -b /tmp/e2e_jar -X POST $P/api/access-tokens/accept-terms -H 'content-t
 check "admin accepts terms and gets a token" "$c" "200"
 admintok=$(grep -o '"item":"[^"]*"' /tmp/e2e_body | cut -d'"' -f4)
 
-check "admin token works with matching gateway identity" "$(code -b /tmp/e2e_jar $P/api/users/me -H "authorization: Bearer $admintok" -H "x-gateway-secret: $S" -H 'remote-email: admin@example.org')" "200"
+check "admin token works with matching gateway identity" "$(code -b /tmp/e2e_jar $P/api/users/me -H "authorization: Bearer $admintok" -H "x-gateway-secret: $S" -H 'remote-email: admin@example.org' -H 'remote-groups: planka-admins')" "200"
 check "admin token refused under another identity" "$(code -b /tmp/e2e_jar $P/api/users/me -H "authorization: Bearer $admintok" -H "x-gateway-secret: $S" -H 'remote-email: jane@example.org')" "401"
 check "admin token refused without gateway headers" "$(code -b /tmp/e2e_jar $P/api/users/me -H "authorization: Bearer $admintok")" "401"
 
@@ -58,11 +58,18 @@ check "demoted back to board user, token issued" "$c $(sql "select role from use
 janetok=$(grep -o '"item":"[^"]*"' /tmp/e2e_body | cut -d'"' -f4)
 janeid=$(sql "select id from user_account where email='jane.citizen@example.org'")
 
-check "role edit in Planka refused" "$(code -b /tmp/e2e_jar -X PATCH $P/api/users/$janeid -H "authorization: Bearer $admintok" -H "x-gateway-secret: $S" -H 'remote-email: admin@example.org' -H 'content-type: application/json' -d '{"role":"admin"}')" "403"
-check "password change refused" "$(code -X PATCH $P/api/users/$janeid/password -H "authorization: Bearer $janetok" -H "x-gateway-secret: $S" -H 'remote-email: jane.citizen@example.org' -H 'content-type: application/json' -d '{"password":"x","currentPassword":"y"}')" "404"
+check "role edit in Planka refused" "$(code -b /tmp/e2e_jar -X PATCH $P/api/users/$janeid -H "authorization: Bearer $admintok" -H "x-gateway-secret: $S" -H 'remote-email: admin@example.org' -H 'remote-groups: planka-admins' -H 'content-type: application/json' -d '{"role":"admin"}')" "403"
+check "password change refused" "$(code -X PATCH $P/api/users/$janeid/password -H "authorization: Bearer $janetok" -H "x-gateway-secret: $S" -H 'remote-email: jane.citizen@example.org' -H 'remote-groups: planka-users' -H 'content-type: application/json' -d '{"password":"x","currentPassword":"y"}')" "404"
+
+# Promotion and demotion also follow the groups on the next request with an
+# existing token, without a fresh sign-in.
+jane() { code $P/api/users/me -H "authorization: Bearer $janetok" -H "x-gateway-secret: $S" -H 'remote-email: jane.citizen@example.org' -H "remote-groups: $1"; }
+check "promoted on the next request" "$(jane 'planka-owners planka-users') $(sql "select role from user_account where email='jane.citizen@example.org'")" "200 projectOwner"
+check "demoted on the next request" "$(jane planka-users) $(sql "select role from user_account where email='jane.citizen@example.org'")" "200 boardUser"
+check "token refused once every Planka group is gone" "$(jane cms-editors) $(sql "select role from user_account where email='jane.citizen@example.org'")" "401 boardUser"
 
 # An administrator deactivates Jane: she stays out despite her group.
-code -b /tmp/e2e_jar -X PATCH $P/api/users/$janeid -H "authorization: Bearer $admintok" -H "x-gateway-secret: $S" -H 'remote-email: admin@example.org' -H 'content-type: application/json' -d '{"isDeactivated":true}' >/dev/null
+code -b /tmp/e2e_jar -X PATCH $P/api/users/$janeid -H "authorization: Bearer $admintok" -H "x-gateway-secret: $S" -H 'remote-email: admin@example.org' -H 'remote-groups: planka-admins' -H 'content-type: application/json' -d '{"isDeactivated":true}' >/dev/null
 c=$(code -X POST $P/api/access-tokens/exchange-with-gateway -H "x-gateway-secret: $S" -H 'remote-email: jane.citizen@example.org' -H 'remote-groups: planka-users')
 check "deactivated account refused" "$c $(grep -o 'User is deactivated' /tmp/e2e_body)" "403 User is deactivated"
 

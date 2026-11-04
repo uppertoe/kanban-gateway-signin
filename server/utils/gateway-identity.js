@@ -96,6 +96,25 @@ const resolveRole = (groups, roleGroups) => {
   );
 };
 
+/**
+ * Checks a signed-in PLANKA user against the gateway identity on a later
+ * request. Returns the role that the gateway now implies for that user, or
+ * null when the gateway no longer vouches for them: no trusted identity, a
+ * different person, or a person who has lost every PLANKA group.
+ *
+ * @param {{ email: string, groups: string[] } | null} identity From readGatewayIdentity.
+ * @param {string} userEmail The email of the user who owns the session.
+ * @param {{ admin: string[], projectOwner: string[], boardUser: string[] }} roleGroups
+ * @returns {string | null}
+ */
+const resolveVouchedRole = (identity, userEmail, roleGroups) => {
+  if (!identity || !userEmail || identity.email !== userEmail.toLowerCase()) {
+    return null;
+  }
+
+  return resolveRole(identity.groups, roleGroups);
+};
+
 // "jane.citizen@example.org" -> "Jane Citizen". Only used when an account is
 // first created; the person can change it in PLANKA afterwards.
 const nameFromEmail = (email) => {
@@ -115,5 +134,6 @@ module.exports = {
   parseList,
   readGatewayIdentity,
   resolveRole,
+  resolveVouchedRole,
   nameFromEmail,
 };

@@ -4,15 +4,8 @@
  * Licensed under the Fair Use License: https://github.com/plankanban/planka/blob/master/LICENSE.md
  */
 
+const { getGatewayActor } = require('../../../utils/gateway-actor');
 const { nameFromEmail, resolveRole } = require('../../../utils/gateway-identity');
-
-// Recorded as the actor on webhooks and actions for accounts that the gateway
-// creates or whose role it changes. Built on use: models are not yet loaded
-// when Sails reads the helpers.
-const getGatewayActor = () => ({
-  id: '_gateway',
-  role: User.Roles.ADMIN,
-});
 
 module.exports = {
   inputs: {
@@ -36,14 +29,14 @@ module.exports = {
   async fn(inputs) {
     const { email, groups } = inputs.identity;
 
-    // The role is set by gateway group membership on every sign-in, so
-    // removing someone from the groups removes their PLANKA access at once.
+    // The role is set by gateway group membership at every sign-in, and the
+    // current-user hook keeps it in step on later requests.
     const role = resolveRole(groups, sails.config.custom.gatewayRoleGroups);
     if (!role) {
       throw 'notPermitted';
     }
 
-    let user = await User.qm.getOneByEmail(email);
+    const user = await User.qm.getOneByEmail(email);
 
     if (!user) {
       return sails.helpers.users.createOne
@@ -67,19 +60,14 @@ module.exports = {
       throw 'deactivated';
     }
 
-    if (user.role !== role) {
-      user = await sails.helpers.users.updateOne
-        .with({
-          record: user,
-          values: { role },
-          actorUser: getGatewayActor(),
-          request: inputs.request,
-        })
-        .intercept('emailAlreadyInUse', 'emailAlreadyInUse')
-        .intercept('usernameAlreadyInUse', 'usernameAlreadyInUse')
-        .intercept('activeLimitReached', 'activeLimitReached');
-    }
-
-    return user;
+    return sails.helpers.users.applyGatewayRole
+      .with({
+        record: user,
+        role,
+        request: inputs.request,
+      })
+      .intercept('emailAlreadyInUse', 'emailAlreadyInUse')
+      .intercept('usernameAlreadyInUse', 'usernameAlreadyInUse')
+      .intercept('activeLimitReached', 'activeLimitReached');
   },
 };

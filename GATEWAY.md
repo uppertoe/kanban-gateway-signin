@@ -23,15 +23,26 @@ headers on any request without the right secret.
    the person has turned it on), and PLANKA issues its normal session.
 4. On every later request PLANKA checks that the gateway still vouches for the
    same email. If it does not, the session is treated as signed out and the
-   login page signs in afresh.
-5. Signing out of PLANKA also sends the browser to the gateway's sign-out
+   login page signs in afresh. The same check applies the role that the
+   person's current groups imply, so a promotion or demotion in the gateway
+   takes effect on the next request. A person who has left every PLANKA group
+   is treated as signed out. PLANKA writes to the database only when the role
+   has changed.
+5. Live updates and most of the client's requests travel over one websocket,
+   which the gateway checks only when it connects. PLANKA trusts only the
+   headers from that connection, never headers that the client adds to a
+   socket request. When the role recorded for the account no longer matches
+   the role from the connection, PLANKA refuses the request and the client
+   signs in again on a new connection. Every page load and every reconnection
+   also makes an ordinary request, which brings the role up to date.
+6. Signing out of PLANKA also sends the browser to the gateway's sign-out
    page. Only a sign-out the person chose does this. When PLANKA refuses a
    stored token instead, for example one issued by an earlier PLANKA version,
    the client drops the token and the login page signs in afresh.
 
-The role is set by group membership at every sign-in, so it cannot be changed
-in PLANKA's user screen. People who belong to none of the configured groups
-cannot use PLANKA. Project and board permissions are managed in PLANKA as usual.
+The role is set by group membership at sign-in and on every later request, so
+it cannot be changed in PLANKA's user screen. People who belong to none of the
+configured groups cannot use PLANKA. Project and board permissions are managed in PLANKA as usual.
 
 ## Settings
 
@@ -57,12 +68,14 @@ through the proxy.
 All new files carry a header saying that they are a local modification.
 
 - New: `server/utils/gateway-identity.js`, the header reader and role mapping,
-  with tests in `server/test/utils/gateway-identity.test.js`.
+  with tests in `server/test/utils/gateway-identity.test.js`, and
+  `server/utils/gateway-actor.js`, the actor recorded for the gateway's changes.
 - New: the `exchange-with-gateway` controller, the `getOrCreateOneWithGateway`
-  helper, the `is-password-sign-in-allowed` policy, and the client's
-  `GatewayContent` login screen.
+  and `applyGatewayRole` helpers, the `is-password-sign-in-allowed` policy, and
+  the client's `GatewayContent` login screen.
 - Changed: the settings (`config/custom.js`), routes and policies; the
-  current-user hook (the per-request identity check); the user update
+  current-user hook (the per-request identity and role check, with tests in
+  `server/test/hooks/current-user-gateway.test.js`); the user update
   controller (role edits refused); the bootstrap response (`gateway` field);
   the client login saga, logout service and token API.
 - Changed: upstream migration `20260807120000_remove_single_sign_on_support`

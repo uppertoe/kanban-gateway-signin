@@ -5,6 +5,7 @@ const {
   parseList,
   readGatewayIdentity,
   resolveRole,
+  resolveVouchedRole,
   nameFromEmail,
 } = require('../../utils/gateway-identity');
 
@@ -104,6 +105,41 @@ describe('gateway-identity', () => {
 
     it('tolerates a role with no groups configured', () => {
       expect(resolveRole(['planka-users'], { boardUser: ['planka-users'] })).to.equal('boardUser');
+    });
+  });
+
+  describe('resolveVouchedRole', () => {
+    const roleGroups = {
+      admin: ['planka-admins'],
+      projectOwner: ['planka-owners'],
+      boardUser: ['planka-users'],
+    };
+    const identity = (groups, email = 'jane@example.org') => ({ email, groups });
+
+    it('returns the role the gateway now implies for the same person', () => {
+      expect(
+        resolveVouchedRole(identity(['planka-users']), 'Jane@Example.org', roleGroups),
+      ).to.equal('boardUser');
+    });
+
+    it('returns null for a different person', () => {
+      expect(
+        resolveVouchedRole(
+          identity(['planka-admins'], 'other@example.org'),
+          'jane@example.org',
+          roleGroups,
+        ),
+      ).to.equal(null);
+    });
+
+    it('returns null when the person has lost every PLANKA group', () => {
+      expect(
+        resolveVouchedRole(identity(['cms-editors']), 'jane@example.org', roleGroups),
+      ).to.equal(null);
+    });
+
+    it('returns null without a trusted identity', () => {
+      expect(resolveVouchedRole(null, 'jane@example.org', roleGroups)).to.equal(null);
     });
   });
 
