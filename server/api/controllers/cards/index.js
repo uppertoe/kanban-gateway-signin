@@ -57,6 +57,13 @@
  *         schema:
  *           type: string
  *           example: 1357158568008091268,1357158568008091269
+ *       - name: excludedLabelIds
+ *         in: query
+ *         required: false
+ *         description: Comma-separated label IDs to exclude from results
+ *         schema:
+ *           type: string
+ *           example: 1357158568008091268,1357158568008091269
  *     responses:
  *       200:
  *         description: Cards retrieved successfully
@@ -189,6 +196,7 @@ module.exports = {
     },
     userIds: idsInput,
     labelIds: idsInput,
+    excludedLabelIds: idsInput,
   },
 
   exits: {
@@ -235,19 +243,45 @@ module.exports = {
     }
 
     let filterLabelIds;
+    let filterExcludedLabelIds;
     if (inputs.labelIds) {
       const labels = await Label.qm.getByBoardId(list.boardId);
       const availableLabelIdsSet = new Set(sails.helpers.utils.mapRecords(labels));
 
       filterLabelIds = _.uniq(inputs.labelIds.split(','));
       filterLabelIds = filterLabelIds.filter((labelId) => availableLabelIdsSet.has(labelId));
+
+      if (inputs.excludedLabelIds) {
+        filterExcludedLabelIds = _.uniq(inputs.excludedLabelIds.split(','));
+        filterExcludedLabelIds = filterExcludedLabelIds.filter((labelId) =>
+          availableLabelIdsSet.has(labelId),
+        );
+      }
+    } else if (inputs.excludedLabelIds) {
+      const labels = await Label.qm.getByBoardId(list.boardId);
+      const availableLabelIdsSet = new Set(sails.helpers.utils.mapRecords(labels));
+
+      filterExcludedLabelIds = _.uniq(inputs.excludedLabelIds.split(','));
+      filterExcludedLabelIds = filterExcludedLabelIds.filter((labelId) =>
+        availableLabelIdsSet.has(labelId),
+      );
     }
 
+    // ISO 8601 allows forms Postgres rejects as a timestamp (`2026`, `2026-W35-3`,
+    // a comma as the decimal separator), so the cursor is normalized here rather
+    // than reaching the query as the string the client sent. It stays a string
+    // because the equality branch of the cursor reads a `Date` as an empty constraint
+    const before = inputs.before && {
+      listChangedAt: moment.utc(inputs.before.listChangedAt, moment.ISO_8601, true).toISOString(),
+      id: inputs.before.id,
+    };
+
     const cards = await Card.qm.getByEndlessListId(list.id, {
-      before: inputs.before,
+      before,
       search: inputs.search,
       userIds: filterUserIds,
       labelIds: filterLabelIds,
+      excludedLabelIds: filterExcludedLabelIds,
     });
 
     const cardIds = sails.helpers.utils.mapRecords(cards);

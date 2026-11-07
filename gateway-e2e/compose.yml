@@ -6,9 +6,11 @@ services:
   planka:
     image: ${PLANKA_IMAGE}
     depends_on: {db: {condition: service_healthy}}
-    ports: ["127.0.0.1:13370:1337"]
+    ports: ["127.0.0.1:${E2E_PORT:-13370}:1337"]
     environment:
-      - BASE_URL=http://localhost:13370
+      # The browser check shares this container's network, so the address
+      # browsers use is localhost:1337; curl reaches the same server on E2E_PORT (13370 by default).
+      - BASE_URL=http://localhost:1337
       - DATABASE_URL=postgresql://planka:pw@db/planka
       - SECRET_KEY=e2e-secret-key-not-for-production-use-0123456789
       - GATEWAY_AUTH=true
@@ -16,8 +18,20 @@ services:
       - GATEWAY_ADMIN_GROUPS=planka-admins
       - GATEWAY_PROJECT_OWNER_GROUPS=planka-owners
       - GATEWAY_BOARD_USER_GROUPS=planka-users
-      - GATEWAY_LOGOUT_URL=https://auth.example.org/logout?rd=http://localhost:13370/
+      - GATEWAY_LOGOUT_URL=https://auth.example.org/logout?rd=http://localhost:1337/
       - DEFAULT_ADMIN_EMAIL=admin@example.org
       - DEFAULT_ADMIN_PASSWORD=seed-password-123
       - DEFAULT_ADMIN_NAME=Seed Admin
       - DEFAULT_ADMIN_USERNAME=seedadmin
+  browser:
+    # The browser check (description.cjs). It shares the planka container's
+    # network, so the page and its socket reach PLANKA at its own BASE_URL.
+    image: mcr.microsoft.com/playwright:v1.58.2-noble
+    profiles: [browser]
+    network_mode: service:planka
+    working_dir: /e2e
+    volumes: ["./:/e2e:ro"]
+    environment:
+      - GATEWAY_SECRET=e2e-gateway-secret-0123456789abcdef
+      - GATEWAY_EMAIL=sam.taylor@example.org
+      - GATEWAY_GROUPS=planka-users

@@ -6,6 +6,7 @@
     "build": "vite build",
     "postinstall": "patch-package",
     "lint": "eslint --ext js,jsx src --report-unused-disable-directives",
+    "locales:check": "node scripts/check-locales.js",
     "start": "vite",
     "test": "jest",
     "test:acceptance": "cucumber-js --import tests/acceptance/cucumber.conf.js --import tests/acceptance/steps/**/*.js --format @cucumber/pretty-formatter tests"
@@ -83,7 +84,7 @@
       "@babel/runtime": "^7.28.6"
     },
     "linkify-it": "^5.0.2",
-    "svgo": "^3.3.4",
+    "svgo": "^3.3.5",
     "uuid": "^11.1.1"
   },
   "dependencies": {

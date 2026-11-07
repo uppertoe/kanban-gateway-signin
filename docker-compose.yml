@@ -1,11 +1,13 @@
 services:
   planka:
-    image: ghcr.io/plankanban/planka:latest@sha256:125f45330853210c678fed1132bedc0912b4a11a27779b79802fbca108e069e2
+    image: ghcr.io/plankanban/planka:latest@sha256:f767ab97b878265ea1fff826867718d6ffa95dac04cd979fb5db82489806fb51
     restart: on-failure
     volumes:
       - data:/app/data
       # - ./terms:/app/terms/custom
-    # Optionally override this to your user/group
+    # Optionally override this to your user/group. The image is built for uid
+    # 1000; any other uid needs group 0, which is what Docker uses when only a
+    # uid is given, and the volume above has to be owned by that uid.
     # user: 1000:1000
     # tmpfs:
     #   - /app/.tmp:mode=770,uid=1000,gid=1000
@@ -21,7 +23,21 @@ services:
       # And add the following to the service:
       # secrets:
       #   - database_password
+      # Or store the whole connection string - then DATABASE_URL should not be set
+      # - DATABASE_URL__FILE=/run/secrets/database_url
 
+      # Anything in the user name or password that is special in a URL has to be
+      # percent-encoded: / as %2F, \ as %5C, : as %3A, @ as %40, % as %25.
+
+      # The schema PLANKA lives in. It must already exist, and the database user
+      # must be able to create tables in it. Defaults to the connection's own
+      # search path, which is usually public.
+      # - DATABASE_SCHEMA=planka
+
+      # REPLACE THIS. Every access token is signed with it, so leaving the
+      # published example value means anyone can mint a token for any account
+      # on this instance. Generate one with: openssl rand -hex 32
+      # PLANKA warns about this on every start until you change it.
       - SECRET_KEY=notsecretkey
       # Optionally store in secrets - then SECRET_KEY should not be set
       # - SECRET_KEY__FILE=/run/secrets/secret_key
@@ -35,12 +51,13 @@ services:
       # - STORAGE_LIMIT=
       # - ACTIVE_USERS_LIMIT=
 
-      # related: https://github.com/knex/knex/issues/2354
-      # As knex does not pass query parameters from the connection string,
-      # we have to use environment variables in order to pass the desired values, e.g.
-      # - PGSSLMODE=<value>
+      # TLS is configured in DATABASE_URL and applies to the app and to the
+      # migrations alike, e.g.
+      # - DATABASE_URL=postgresql://postgres@postgres/planka?sslmode=verify-full&sslrootcert=/run/secrets/ca.pem
+      # PGSSLMODE is still read when the connection string says nothing about TLS.
 
-      # Configure knex to accept SSL certificates
+      # Accept a certificate that cannot be verified. Prefer sslrootcert above,
+      # which trusts your own CA instead of trusting anything.
       # - KNEX_REJECT_UNAUTHORIZED_SSL_CERTIFICATE=false
 
       # The default application language used as a fallback when a user's language is not set.
@@ -111,7 +128,7 @@ services:
         condition: service_healthy
 
   postgres:
-    image: postgres:16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
+    image: postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139
     restart: on-failure
     volumes:
       - db-data:/var/lib/postgresql/data

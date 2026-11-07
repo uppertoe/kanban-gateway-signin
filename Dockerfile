@@ -1,5 +1,5 @@
 # Stage 1: Server build
-FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS server
+FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS server
 
 RUN apk -U upgrade \
   && apk add build-base python3 --no-cache
@@ -13,18 +13,19 @@ RUN  npm install \
   && npm prune --production
 
 # Stage 2: Client build
-FROM node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 AS client
+FROM node:24@sha256:8fa96264f302f58bbb13aa7339c541547b56975766ce956c875da149452a3e40 AS client
 
 WORKDIR /app
 
 COPY client .
+COPY CHANGELOG.md /CHANGELOG.md
 
 RUN npm install npm --global \
   && npm install --omit=dev \
   && INDEX_FORMAT=ejs DISABLE_ESLINT_PLUGIN=true npm run build
 
 # Stage 3: Final image
-FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85
+FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8
 
 RUN apk -U upgrade \
   && apk add bash python3 squid --no-cache
@@ -46,6 +47,19 @@ RUN python3 -m venv .venv \
   && mv .env.sample .env \
   && mv public/index.ejs views \
   && npm config set update-notifier false
+
+# Everything above is owned by uid 1000, and the app has to create its log and
+# temporary directories at runtime. Group 0 is what Docker gives a bare
+# `user: <uid>`, so handing these directories to it is what lets any other uid
+# start. The data volume inherits this too when it is created.
+USER root
+
+RUN mkdir -p logs .tmp data \
+  && chown node:0 logs .tmp data \
+  && chgrp 0 /app \
+  && chmod g+rwx /app logs .tmp data
+
+USER node
 
 VOLUME /app/data
 EXPOSE 1337

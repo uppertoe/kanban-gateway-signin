@@ -2,6 +2,40 @@ apiVersion: v2
 name: planka
 description: A Helm chart to deploy PLANKA and it's dependencies.
 
+# Where the chart, the project and its documentation live. Artifact Hub reads
+# these to build the listing, so they are not decoration.
+home: https://planka.app
+icon: https://raw.githubusercontent.com/plankanban/planka/master/assets/logo.png
+sources:
+  - https://github.com/plankanban/planka
+  - https://github.com/plankanban/planka/tree/master/charts/planka
+
+keywords:
+  - planka
+  - kanban
+  - project-management
+  - trello
+  - collaboration
+
+maintainers:
+  - name: PLANKA
+    email: security@planka.group
+    url: https://github.com/plankanban/planka
+
+annotations:
+  artifacthub.io/links: |
+    - name: Chart documentation
+      url: https://docs.planka.cloud/docs/installation/kubernetes/helm-chart/
+    - name: Chart source
+      url: https://github.com/plankanban/planka/tree/master/charts/planka
+    - name: Issue tracker
+      url: https://github.com/plankanban/planka/issues
+    - name: License
+      url: https://github.com/plankanban/planka/blob/master/LICENSE.md
+  artifacthub.io/images: |
+    - name: planka
+      image: ghcr.io/plankanban/planka
+
 # A chart can be either an 'application' or a 'library' chart.
 #
 # Application charts are a collection of templates that can be packaged into versioned archives
@@ -15,13 +49,13 @@ type: application
 # This is the chart version. This version number should be incremented each time you make changes
 # to the chart and its templates, including the app version.
 # Versions are expected to follow Semantic Versioning (https://semver.org/)
-version: 2.2.0
+version: 2.3.1
 
 # This is the version number of the application being deployed. This version number should be
 # incremented each time you make changes to the application. Versions are not expected to
 # follow Semantic Versioning. They should reflect the version the application is using.
 # It is recommended to use it with quotes.
-appVersion: "2.2.0"
+appVersion: "2.3.1"
 
 dependencies:
   - alias: postgresql

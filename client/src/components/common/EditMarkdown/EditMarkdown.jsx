@@ -3,8 +3,9 @@
  * Licensed under the Fair Use License: https://github.com/plankanban/planka/blob/master/LICENSE.md
  */
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
+import keyBy from 'lodash/keyBy';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { Button, Form } from 'semantic-ui-react';
@@ -13,116 +14,159 @@ import { useClickAwayListener } from '../../../lib/hooks';
 import selectors from '../../../selectors';
 import entryActions from '../../../entry-actions';
 import { useNestedRef } from '../../../hooks';
+import { mentionMarkupToText, mentionTextToMarkup } from '../../../utils/mentions';
+import { saveDraftSnapshot } from '../../../utils/description-draft';
 import MarkdownEditor from '../MarkdownEditor';
 
 import styles from './EditMarkdown.module.scss';
 
 const MAX_LENGTH = 1048576;
 
-const EditMarkdown = React.memo(({ defaultValue, draftValue, onUpdate, onClose }) => {
-  const defaultMode = useSelector((state) => selectors.selectCurrentUser(state).defaultEditorMode);
+const EditMarkdown = React.memo(
+  ({ defaultValue, draftValue, draftSnapshot, onUpdate, onClose }) => {
+    const defaultMode = useSelector(
+      (state) => selectors.selectCurrentUser(state).defaultEditorMode,
+    );
+    const boardMemberships = useSelector(selectors.selectMembershipsForCurrentBoard);
 
-  const dispatch = useDispatch();
-  const [t] = useTranslation();
-  const [value, setValue] = useState(() => draftValue || defaultValue || '');
+    const userByUsername = useMemo(
+      () =>
+        keyBy(
+          boardMemberships.flatMap(({ user }) => (user.username ? user : [])),
+          ({ username }) => username.toLowerCase(),
+        ),
+      [boardMemberships],
+    );
 
-  const fieldRef = useRef(null);
-  const [submitButtonRef, handleSubmitButtonRef] = useNestedRef();
-  const [cancelButtonRef, handleCancelButtonRef] = useNestedRef();
+    const dispatch = useDispatch();
+    const [t] = useTranslation();
+    const [value, setValue] = useState(() => mentionMarkupToText(draftValue || defaultValue || ''));
 
-  const handleModeChange = useCallback(
-    (mode) => {
-      dispatch(
-        entryActions.updateCurrentUser({
-          defaultEditorMode: mode,
-        }),
-      );
-    },
-    [dispatch],
-  );
+    const fieldRef = useRef(null);
+    const [submitButtonRef, handleSubmitButtonRef] = useNestedRef();
+    const [cancelButtonRef, handleCancelButtonRef] = useNestedRef();
 
-  const isExceeded = value.length > MAX_LENGTH;
+    const handleModeChange = useCallback(
+      (mode) => {
+        dispatch(
+          entryActions.updateCurrentUser({
+            defaultEditorMode: mode,
+          }),
+        );
+      },
+      [dispatch],
+    );
 
-  const submit = useCallback(() => {
-    const cleanValue = value.trim() || null;
+    const isExceeded = value.length > MAX_LENGTH;
 
-    if (!isExceeded && cleanValue !== defaultValue) {
-      onUpdate(cleanValue);
-    }
+    const submit = useCallback(() => {
+      const valueWithMarkup = mentionTextToMarkup(value, userByUsername);
+      const cleanValue = valueWithMarkup.trim() || null;
 
-    onClose(isExceeded ? cleanValue : null);
-  }, [onUpdate, onClose, defaultValue, value, isExceeded]);
+      if (!isExceeded && cleanValue !== defaultValue) {
+        onUpdate(cleanValue);
+      }
 
-  const handleChange = useCallback((nextValue) => {
-    setValue(nextValue);
-  }, []);
+      onClose(isExceeded ? cleanValue : null);
+    }, [onUpdate, onClose, defaultValue, value, isExceeded, userByUsername]);
 
-  const handleSubmit = useCallback(() => {
-    submit();
-  }, [submit]);
+    // Local crash-recovery snapshot (debounced). Cleared by the caller on a
+    // normal close, so only an uncontrolled crash/close leaves one behind.
+    // The editor's own text is stored, not its markup form, so recovery can feed
+    // it straight back through `draftValue` without a second mention conversion.
+    useEffect(() => {
+      if (!draftSnapshot) {
+        return undefined;
+      }
 
-  const handleCancel = useCallback(() => {
-    submit();
-  }, [submit]);
+      const timeoutId = setTimeout(() => {
+        saveDraftSnapshot(
+          draftSnapshot.userId,
+          draftSnapshot.cardId,
+          value,
+          draftSnapshot.baseline,
+        );
+      }, 1000);
 
-  const handleCancelClick = useCallback(() => {
-    onClose(null);
-  }, [onClose]);
+      return () => clearTimeout(timeoutId);
+    }, [value, draftSnapshot]);
 
-  const handleClickAwayCancel = useCallback(() => {
-    fieldRef.current.focus();
-  }, [fieldRef]);
+    const handleChange = useCallback((nextValue) => {
+      setValue(nextValue);
+    }, []);
 
-  const clickAwayProps = useClickAwayListener(
-    [fieldRef, submitButtonRef, cancelButtonRef],
-    submit,
-    handleClickAwayCancel,
-  );
+    const handleSubmit = useCallback(() => {
+      submit();
+    }, [submit]);
 
-  return (
-    <>
-      <MarkdownEditor
-        {...clickAwayProps} // eslint-disable-line react/jsx-props-no-spreading
-        ref={fieldRef}
-        defaultValue={value}
-        defaultMode={defaultMode}
-        isError={isExceeded}
-        onChange={handleChange}
-        onSubmit={handleSubmit}
-        onCancel={handleCancel}
-        onModeChange={handleModeChange}
-      />
-      <Form onSubmit={handleSubmit}>
-        <div className={styles.controls}>
-          <Button
-            {...clickAwayProps} // eslint-disable-line react/jsx-props-no-spreading
-            positive
-            ref={handleSubmitButtonRef}
-            content={
-              isExceeded
-                ? t('common.contentExceedsLimit', {
-                    limit: '1MB',
-                  })
-                : t('action.save')
-            }
-            disabled={isExceeded}
-          />
-          <Button
-            {...clickAwayProps} // eslint-disable-line react/jsx-props-no-spreading
-            ref={handleCancelButtonRef}
-            type="button"
-            content={t('action.cancel')}
-            onClick={handleCancelClick}
-          />
-        </div>
-      </Form>
-    </>
-  );
-});
+    const handleCancel = useCallback(() => {
+      submit();
+    }, [submit]);
+
+    const handleCancelClick = useCallback(() => {
+      onClose(null);
+    }, [onClose]);
+
+    const handleClickAwayCancel = useCallback(() => {
+      fieldRef.current.focus();
+    }, [fieldRef]);
+
+    const clickAwayProps = useClickAwayListener(
+      [fieldRef, submitButtonRef, cancelButtonRef],
+      submit,
+      handleClickAwayCancel,
+    );
+
+    return (
+      <>
+        <MarkdownEditor
+          {...clickAwayProps} // eslint-disable-line react/jsx-props-no-spreading
+          ref={fieldRef}
+          defaultValue={value}
+          defaultMode={defaultMode}
+          isError={isExceeded}
+          onChange={handleChange}
+          onSubmit={handleSubmit}
+          onCancel={handleCancel}
+          onModeChange={handleModeChange}
+        />
+        <Form onSubmit={handleSubmit}>
+          <div className={styles.controls}>
+            <Button
+              {...clickAwayProps} // eslint-disable-line react/jsx-props-no-spreading
+              positive
+              ref={handleSubmitButtonRef}
+              content={
+                isExceeded
+                  ? t('common.contentExceedsLimit', {
+                      limit: '1MB',
+                    })
+                  : t('action.save')
+              }
+              disabled={isExceeded}
+            />
+            <Button
+              {...clickAwayProps} // eslint-disable-line react/jsx-props-no-spreading
+              ref={handleCancelButtonRef}
+              type="button"
+              content={t('action.cancel')}
+              onClick={handleCancelClick}
+            />
+          </div>
+        </Form>
+      </>
+    );
+  },
+);
 
 EditMarkdown.propTypes = {
   defaultValue: PropTypes.string,
   draftValue: PropTypes.string,
+  draftSnapshot: PropTypes.shape({
+    userId: PropTypes.string,
+    cardId: PropTypes.string,
+    baseline: PropTypes.string,
+  }),
   // placeholder: PropTypes.string.isRequired, // TODO: remove?
   onUpdate: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
@@ -131,6 +175,7 @@ EditMarkdown.propTypes = {
 EditMarkdown.defaultProps = {
   defaultValue: undefined,
   draftValue: undefined,
+  draftSnapshot: undefined,
 };
 
 export default EditMarkdown;
