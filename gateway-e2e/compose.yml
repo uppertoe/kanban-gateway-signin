@@ -6,10 +6,10 @@ services:
   planka:
     image: ${PLANKA_IMAGE}
     depends_on: {db: {condition: service_healthy}}
-    ports: ["127.0.0.1:13370:1337"]
+    ports: ["127.0.0.1:${E2E_PORT:-13370}:1337"]
     environment:
       # The browser check shares this container's network, so the address
-      # browsers use is localhost:1337; curl reaches the same server on 13370.
+      # browsers use is localhost:1337; curl reaches the same server on E2E_PORT (13370 by default).
       - BASE_URL=http://localhost:1337
       - DATABASE_URL=postgresql://planka:pw@db/planka
       - SECRET_KEY=e2e-secret-key-not-for-production-use-0123456789

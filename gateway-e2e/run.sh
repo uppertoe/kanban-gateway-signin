@@ -2,7 +2,8 @@
 # End-to-end check of the gateway sign-in patch. Usage: run.sh <patched-image>
 set -u
 cd "$(dirname "$0")"
-P=http://127.0.0.1:13370
+E2E_PORT=${E2E_PORT:-13370}; export E2E_PORT
+P=http://127.0.0.1:$E2E_PORT
 S=e2e-gateway-secret-0123456789abcdef
 pass=0; fail=0
 check() { if [ "$2" = "$3" ]; then echo "PASS $1"; pass=$((pass+1)); else echo "FAIL $1 (got '$2', want '$3')"; fail=$((fail+1)); fi; }
