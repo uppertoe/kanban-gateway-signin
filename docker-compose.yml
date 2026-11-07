@@ -1,6 +1,6 @@
 services:
   planka:
-    image: ghcr.io/plankanban/planka:latest@sha256:125f45330853210c678fed1132bedc0912b4a11a27779b79802fbca108e069e2
+    image: ghcr.io/plankanban/planka:latest@sha256:f767ab97b878265ea1fff826867718d6ffa95dac04cd979fb5db82489806fb51
     restart: on-failure
     volumes:
       - data:/app/data
@@ -128,7 +128,7 @@ services:
         condition: service_healthy
 
   postgres:
-    image: postgres:16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
+    image: postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139
     restart: on-failure
     volumes:
       - db-data:/var/lib/postgresql/data
