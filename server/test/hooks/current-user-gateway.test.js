@@ -5,6 +5,7 @@
 const { expect } = require('chai');
 
 const defineCurrentUserHook = require('../../api/hooks/current-user');
+const resolveAccessToken = require('../../api/helpers/utils/resolve-access-token');
 
 const SECRET = 'a'.repeat(40);
 const ACCESS_TOKEN = 'token-1';
@@ -28,6 +29,7 @@ describe('current-user hook (gateway)', () => {
   let roleWrites;
   let joinedRooms;
   let custom;
+  let savedSails;
 
   const fakeSails = {
     config: {},
@@ -35,6 +37,8 @@ describe('current-user hook (gateway)', () => {
     helpers: {
       utils: {
         verifyJwtToken: () => ({ subject: storedUser.id, issuedAt: new Date(0) }),
+        // Upstream's shared token checks, run for real against the stand-ins.
+        resolveAccessToken: { with: (inputs) => resolveAccessToken.fn(inputs) },
       },
       users: {
         applyGatewayRole: {
@@ -76,6 +80,8 @@ describe('current-user hook (gateway)', () => {
   before(() => {
     savedUser = global.User;
     savedSession = global.Session;
+    savedSails = global.sails;
+    global.sails = fakeSails;
 
     global.User = {
       INTERNAL: { id: '_internal' },
@@ -92,6 +98,7 @@ describe('current-user hook (gateway)', () => {
   after(() => {
     global.User = savedUser;
     global.Session = savedSession;
+    global.sails = savedSails;
   });
 
   beforeEach(() => {
