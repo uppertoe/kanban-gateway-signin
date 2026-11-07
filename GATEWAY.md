@@ -92,7 +92,15 @@ All new files carry a header saying that they are a local modification.
 
 ## Keeping up with upstream
 
-The modification lives on `main` as a small series of commits on
-top of an upstream release tag. To move to a new release, rebase the branch
-onto the new tag, run the server tests and the end-to-end check, and publish
-the image.
+The modification lives on `main`, and each upstream release is merged into
+it, never rebased, so `main` is never force-pushed. To move to a new release,
+branch from `main` as `upstream/vX.Y.Z`, run `git merge vX.Y.Z`, resolve any
+conflicts in favour of keeping the local modifications listed above, and open
+a pull request. The Gateway build workflow then runs the server tests, builds
+the image and runs the end-to-end check (`gateway-e2e/run.sh <image>`).
+
+The end-to-end check upgrades a real upstream 2.1.1 database to the new image,
+exercises gateway sign-in and role changes with curl, and then signs in a
+gateway-created person (who has no username) in a headless browser, opens a
+card and saves its description. Set `E2E_PORT` to run it beside another stack
+on the same machine.
