@@ -37,8 +37,14 @@ admin_name: ""
 admin_username: ""
 
 # Base url for PLANKA. Will override `ingress.hosts[0].host`
-# Defaults to `http://localhost:3000` if ingress is disabled.
+# Defaults to `defaultBaseUrl` if ingress is disabled.
 baseUrl: ""
+
+# Base url used when ingress is disabled and no `baseUrl` is set.
+# PLANKA only accepts websocket connections from the origin it is told it is
+# served from, so a port-forward on another port, or a service reached by any
+# other address, needs this to match what the browser actually asks for.
+defaultBaseUrl: "http://localhost:3000"
 
 serviceAccount:
   # Specifies whether a service account should be created
@@ -51,8 +57,12 @@ serviceAccount:
 
 podAnnotations: {}
 
-podSecurityContext: {}
-  # fsGroup: 2000
+podSecurityContext:
+  fsGroup: 1000
+  # Without this Kubernetes chowns every file on the volume on each pod start,
+  # which on an instance with a lot of attachments delays every restart for as
+  # long as the walk takes. OnRootMismatch pays that once.
+  fsGroupChangePolicy: OnRootMismatch
 
 # Annotations to add to the deployment
 deploymentAnnotations: {}
@@ -103,6 +113,29 @@ resources: {}
   # requests:
   #   cpu: 100m
   #   memory: 128Mi
+
+## Liveness and readiness probes for the PLANKA container.
+## The timing fields are left commented out, which leaves Kubernetes' own
+## defaults in place. Raise them when slow storage or a cold database makes the
+## first start take longer than the probe allows, rather than letting the pod
+## restart in a loop that looks like PLANKA crashing.
+livenessProbe:
+  enabled: true
+  path: /
+  # initialDelaySeconds: 30
+  # periodSeconds: 10
+  # timeoutSeconds: 1
+  # successThreshold: 1
+  # failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  path: /
+  # initialDelaySeconds: 5
+  # periodSeconds: 10
+  # timeoutSeconds: 1
+  # successThreshold: 1
+  # failureThreshold: 3
 
 autoscaling:
   enabled: false

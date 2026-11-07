@@ -68,6 +68,25 @@ check "promoted on the next request" "$(jane 'planka-owners planka-users') $(sql
 check "demoted on the next request" "$(jane planka-users) $(sql "select role from user_account where email='jane.citizen@example.org'")" "200 boardUser"
 check "token refused once every Planka group is gone" "$(jane cms-editors) $(sql "select role from user_account where email='jane.citizen@example.org'")" "401 boardUser"
 
+# A person created by gateway sign-in has no username. Upstream 2.3.0 crashed
+# the description editor on any board with such a member, so a browser signed
+# in as one opens a card on a board they belong to and edits its description.
+c=$(code -X POST $P/api/access-tokens/exchange-with-gateway -H "x-gateway-secret: $S" -H 'remote-email: sam.taylor@example.org' -H 'remote-groups: planka-users')
+pending=$(grep -o '"pendingToken":"[^"]*"' /tmp/e2e_body | cut -d'"' -f4)
+if [ -n "$pending" ]; then code -X POST $P/api/access-tokens/accept-terms -H 'content-type: application/json' -d "{\"pendingToken\":\"$pending\",\"signature\":\"$sig\"}" >/dev/null; fi
+check "gateway-created user has no username" "$(sql "select coalesce(username, 'none') from user_account where email='sam.taylor@example.org'")" "none"
+samid=$(sql "select id from user_account where email='sam.taylor@example.org'")
+admin() { curl -s -b /tmp/e2e_jar -X POST "$P/api$1" -H "authorization: Bearer $admintok" -H "x-gateway-secret: $S" -H 'remote-email: admin@example.org' -H 'remote-groups: planka-admins' -H 'content-type: application/json' -d "$2" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4; }
+project=$(admin /projects '{"type":"private","name":"Editor check"}')
+board=$(admin /projects/$project/boards '{"name":"Board","position":65536}')
+list=$(admin /boards/$board/lists '{"type":"active","name":"List","position":65536}')
+card=$(admin /lists/$list/cards '{"type":"project","name":"Card","position":65536}')
+admin /boards/$board/board-memberships "{\"userId\":\"$samid\",\"role\":\"editor\"}" >/dev/null
+check "card set up on a board with Sam as a member" "$(sql "select count(*) from board_membership where board_id='$board' and user_id='$samid'")" "1"
+result=$(docker compose run --rm -T browser sh -c 'cd /tmp && npm install --silent --no-save playwright-core@1.58.2 >/dev/null 2>&1 && NODE_PATH=/tmp/node_modules node /e2e/description.cjs "$0" "$1"' "$card" "Edited by a member with no username" 2>&1 | tail -1)
+check "member with no username edits a card description in the browser" "$result" "saved"
+check "description saved" "$(sql "select description from card where id='$card'")" "Edited by a member with no username"
+
 # An administrator deactivates Jane: she stays out despite her group.
 code -b /tmp/e2e_jar -X PATCH $P/api/users/$janeid -H "authorization: Bearer $admintok" -H "x-gateway-secret: $S" -H 'remote-email: admin@example.org' -H 'remote-groups: planka-admins' -H 'content-type: application/json' -d '{"isDeactivated":true}' >/dev/null
 c=$(code -X POST $P/api/access-tokens/exchange-with-gateway -H "x-gateway-secret: $S" -H 'remote-email: jane.citizen@example.org' -H 'remote-groups: planka-users')

@@ -12,6 +12,8 @@ import { isLocalId } from '../utils/local-id';
 import { isListArchiveOrTrash } from '../utils/record-helpers';
 import { ListTypes } from '../constants/Enums';
 
+export const selectBoards = createSelector(orm, ({ Board }) => Board.all().toRefArray());
+
 export const makeSelectBoardById = () =>
   createSelector(
     orm,
@@ -459,6 +461,42 @@ export const selectFilterLabelIdsForCurrentBoard = createSelector(
   },
 );
 
+export const selectFilterExcludedLabelIdsForCurrentBoard = createSelector(
+  orm,
+  (state) => selectPath(state).boardId,
+  ({ Board }, id) => {
+    if (!id) {
+      return id;
+    }
+
+    const boardModel = Board.withId(id);
+
+    if (!boardModel) {
+      return boardModel;
+    }
+
+    return boardModel.filterExcludedLabels.toRefArray().map((label) => label.id);
+  },
+);
+
+export const selectFilterListIdsForCurrentBoard = createSelector(
+  orm,
+  (state) => selectPath(state).boardId,
+  ({ Board }, id) => {
+    if (!id) {
+      return id;
+    }
+
+    const boardModel = Board.withId(id);
+
+    if (!boardModel) {
+      return boardModel;
+    }
+
+    return boardModel.filterLists.toRefArray().map((list) => list.id);
+  },
+);
+
 export const selectIsBoardWithIdExists = createSelector(
   orm,
   (_, id) => id,
@@ -466,6 +504,7 @@ export const selectIsBoardWithIdExists = createSelector(
 );
 
 export default {
+  selectBoards,
   makeSelectBoardById,
   selectBoardById,
   makeSelectCurrentUserMembershipByBoardId,
@@ -491,5 +530,7 @@ export default {
   selectActivityIdsForCurrentBoard,
   selectFilterUserIdsForCurrentBoard,
   selectFilterLabelIdsForCurrentBoard,
+  selectFilterExcludedLabelIdsForCurrentBoard,
+  selectFilterListIdsForCurrentBoard,
   selectIsBoardWithIdExists,
 };

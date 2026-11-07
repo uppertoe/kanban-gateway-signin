@@ -3,18 +3,22 @@
  * Licensed under the Fair Use License: https://github.com/plankanban/planka/blob/master/LICENSE.md
  */
 
-import React, { useCallback, useContext, useMemo, useState } from 'react';
+import keyBy from 'lodash/keyBy';
+import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import classNames from 'classnames';
 import { shallowEqual, useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { Gallery, Item as GalleryItem } from 'react-photoswipe-gallery';
 import { Button, Grid, Icon } from 'semantic-ui-react';
 import { useDidUpdate } from '../../../lib/hooks';
+import { Tooltip } from '../../../lib/custom-ui';
 
 import selectors from '../../../selectors';
 import entryActions from '../../../entry-actions';
 import { usePopupInClosableContext } from '../../../hooks';
 import { isUsableMarkdownElement } from '../../../utils/element-helpers';
+import { mentionMarkupToText, mentionTextToMarkup } from '../../../utils/mentions';
+import { clearDraftSnapshot, loadDraftSnapshot } from '../../../utils/description-draft';
 import { BoardMembershipRoles, CardTypes, ListTypes } from '../../../constants/Enums';
 import { CardTypeIcons } from '../../../constants/Icons';
 import { ClosableContext } from '../../../contexts';
@@ -45,6 +49,7 @@ const StoryContent = React.memo(() => {
 
   const card = useSelector(selectors.selectCurrentCard);
   const board = useSelector(selectors.selectCurrentBoard);
+  const boardMemberships = useSelector(selectors.selectMembershipsForCurrentBoard);
   const userIds = useSelector(selectors.selectUserIdsForCurrentCard);
   const labelIds = useSelector(selectors.selectLabelIdsForCurrentCard);
   const attachmentIds = useSelector(selectors.selectAttachmentIdsForCurrentCard);
@@ -53,6 +58,7 @@ const StoryContent = React.memo(() => {
     selectors.selectImageAttachmentIdsExceptCoverForCurrentCard,
   );
 
+  const currentUserId = useSelector(selectors.selectCurrentUserId);
   const isJoined = useSelector(selectors.selectIsCurrentUserInCurrentCard);
 
   const list = useSelector((state) => selectListById(state, card.listId));
@@ -136,10 +142,49 @@ const StoryContent = React.memo(() => {
   }, shallowEqual);
 
   const dispatch = useDispatch();
+  const userByUsername = useMemo(
+    () =>
+      keyBy(
+        boardMemberships.flatMap(({ user }) => (user.username ? user : [])),
+        ({ username }) => username.toLowerCase(),
+      ),
+    [boardMemberships],
+  );
+
   const [t] = useTranslation();
   const [descriptionDraft, setDescriptionDraft] = useState(null);
   const [isEditDescriptionOpened, setIsEditDescriptionOpened] = useState(false);
+  const [recoveredDraftConflict, setRecoveredDraftConflict] = useState(false);
   const [activateClosable, deactivateClosable, setIsClosableActive] = useContext(ClosableContext);
+
+  // Pick up a draft that an uncontrolled close (crash, killed tab) left behind.
+  // If the description moved on in the meantime, flag it so the chip warns
+  // before the user saves over a change they never saw. Mount only — a later
+  // description update must not resurrect a draft the user just discarded.
+  useEffect(() => {
+    const snapshot = loadDraftSnapshot(currentUserId, card.id);
+
+    if (snapshot && snapshot.value !== mentionMarkupToText(card.description || '')) {
+      setDescriptionDraft(snapshot.value);
+
+      if (snapshot.baseline && snapshot.baseline !== card.description) {
+        setRecoveredDraftConflict(true);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Baseline for that comparison. There is no server-side description hash
+  // here, so the description itself travels with the snapshot — both the write
+  // and the compare happen in this browser anyway.
+  const descriptionDraftSnapshot = useMemo(
+    () => ({
+      userId: currentUserId,
+      cardId: card.id,
+      baseline: card.description || undefined,
+    }),
+    [currentUserId, card.id, card.description],
+  );
 
   const handleListSelect = useCallback(
     (listId) => {
@@ -163,11 +208,11 @@ const StoryContent = React.memo(() => {
     (description) => {
       dispatch(
         entryActions.updateCurrentCard({
-          description,
+          description: description && mentionTextToMarkup(description, userByUsername),
         }),
       );
     },
-    [dispatch],
+    [dispatch, userByUsername],
   );
 
   const handleRestoreClick = useCallback(() => {
@@ -245,10 +290,20 @@ const StoryContent = React.memo(() => {
     setIsEditDescriptionOpened(true);
   }, []);
 
-  const handleEditDescriptionClose = useCallback((nextDescriptionDraft) => {
-    setDescriptionDraft(nextDescriptionDraft);
-    setIsEditDescriptionOpened(false);
-  }, []);
+  const handleEditDescriptionClose = useCallback(
+    (nextDescriptionDraft) => {
+      setDescriptionDraft(nextDescriptionDraft);
+      setIsEditDescriptionOpened(false);
+      // Every normal close drops the crash snapshot, saved or cancelled alike —
+      // a leftover snapshot is the signal that the close was not normal.
+      clearDraftSnapshot(currentUserId, card.id);
+
+      if (!nextDescriptionDraft) {
+        setRecoveredDraftConflict(false);
+      }
+    },
+    [currentUserId, card.id],
+  );
 
   const handleBeforeGalleryOpen = useCallback(
     (gallery) => {
@@ -383,12 +438,14 @@ const StoryContent = React.memo(() => {
                         onSelect={handleLabelSelect}
                         onDeselect={handleLabelDeselect}
                       >
-                        <button
-                          type="button"
-                          className={classNames(styles.attachment, styles.dueDate)}
-                        >
-                          <Icon name="add" size="small" className={styles.addAttachment} />
-                        </button>
+                        <Tooltip content={t('action.addLabel')}>
+                          <button
+                            type="button"
+                            className={classNames(styles.attachment, styles.dueDate)}
+                          >
+                            <Icon name="add" size="small" className={styles.addAttachment} />
+                          </button>
+                        </Tooltip>
                       </LabelsPopup>
                     )}
                   </div>
@@ -403,6 +460,7 @@ const StoryContent = React.memo(() => {
                       <EditMarkdown
                         defaultValue={card.description}
                         draftValue={descriptionDraft}
+                        draftSnapshot={descriptionDraftSnapshot}
                         placeholder="common.enterDescription"
                         onUpdate={handleDescriptionUpdate}
                         onClose={handleEditDescriptionClose}
@@ -410,7 +468,11 @@ const StoryContent = React.memo(() => {
                     ) : (
                       <>
                         {descriptionDraft && (
-                          <span className={styles.draftChip}>{t('common.unsavedChanges')}</span>
+                          <span className={styles.draftChip}>
+                            {recoveredDraftConflict
+                              ? t('common.recoveredDraftDescriptionChanged')
+                              : t('common.unsavedChanges')}
+                          </span>
                         )}
                         {card.description ? (
                           /* eslint-disable-next-line jsx-a11y/click-events-have-key-events,
@@ -419,9 +481,11 @@ const StoryContent = React.memo(() => {
                             className={classNames(styles.descriptionText, styles.cursorPointer)}
                             onClick={handleEditDescriptionClick}
                           >
-                            <Button className={styles.editButton}>
-                              <Icon fitted name="pencil" size="small" />
-                            </Button>
+                            <Tooltip content={t('action.editDescription', { context: 'title' })}>
+                              <Button className={styles.editButton}>
+                                <Icon fitted name="pencil" size="small" />
+                              </Button>
+                            </Tooltip>
                             <Markdown>{card.description}</Markdown>
                           </div>
                         ) : (
@@ -477,14 +541,16 @@ const StoryContent = React.memo(() => {
                 <div className={classNames(styles.text, styles.textList)}>{t('common.list')}</div>
                 {canUseLists ? (
                   <ListsPopup currentId={list.id} onSelect={handleListSelect}>
-                    <button type="button" className={styles.listButton}>
-                      <span className={classNames(styles.list, styles.listHoverable)}>
-                        <Icon name="columns" size="small" className={styles.listIcon} />
-                        <span className={styles.hidable}>
-                          {list.name || t(`common.${list.type}`)}
+                    <Tooltip content={t('common.selectList')}>
+                      <button type="button" className={styles.listButton}>
+                        <span className={classNames(styles.list, styles.listHoverable)}>
+                          <Icon name="columns" size="small" className={styles.listIcon} />
+                          <span className={styles.hidable}>
+                            {list.name || t(`common.${list.type}`)}
+                          </span>
                         </span>
-                      </span>
-                    </button>
+                      </button>
+                    </Tooltip>
                   </ListsPopup>
                 ) : (
                   <span className={styles.list}>

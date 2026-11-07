@@ -18,6 +18,7 @@ FROM node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124
 WORKDIR /app
 
 COPY client .
+COPY CHANGELOG.md /CHANGELOG.md
 
 RUN npm install npm --global \
   && npm install --omit=dev \
@@ -46,6 +47,19 @@ RUN python3 -m venv .venv \
   && mv .env.sample .env \
   && mv public/index.ejs views \
   && npm config set update-notifier false
+
+# Everything above is owned by uid 1000, and the app has to create its log and
+# temporary directories at runtime. Group 0 is what Docker gives a bare
+# `user: <uid>`, so handing these directories to it is what lets any other uid
+# start. The data volume inherits this too when it is created.
+USER root
+
+RUN mkdir -p logs .tmp data \
+  && chown node:0 logs .tmp data \
+  && chgrp 0 /app \
+  && chmod g+rwx /app logs .tmp data
+
+USER node
 
 VOLUME /app/data
 EXPOSE 1337

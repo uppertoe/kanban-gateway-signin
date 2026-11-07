@@ -7,16 +7,21 @@ import { attr, fk, many } from 'redux-orm';
 
 import BaseModel from './BaseModel';
 import buildSearchParts from '../utils/build-search-parts';
+import filterCardLabels from '../utils/filter-card-labels';
 import { isListKanban } from '../utils/record-helpers';
+import { recallBoardView } from '../utils/board-view-memory';
 import ActionTypes from '../constants/ActionTypes';
 import Config from '../constants/Config';
-import { BoardContexts, BoardViews } from '../constants/Enums';
+import { BoardContexts, BoardViews, LabelFilterModes } from '../constants/Enums';
 
 const prepareFetchedBoard = (board) => ({
   ...board,
   isFetching: false,
   context: BoardContexts.BOARD,
-  view: board.defaultView,
+  // Whatever this window was last looking at, where that choice still applies —
+  // see `utils/board-view-memory`. A board's configured default is where it
+  // starts, not where it has to stay.
+  view: recallBoardView(board.id, BoardContexts.BOARD) || board.defaultView,
   search: '',
 });
 
@@ -31,6 +36,7 @@ export default class extends BaseModel {
     defaultCardType: attr(),
     limitCardTypesToDefaultOne: attr(),
     alwaysDisplayCardCreator: attr(),
+    showCardCounter: attr(),
     displayCardAges: attr(),
     expandTaskListsByDefault: attr(),
     context: attr(),
@@ -63,6 +69,11 @@ export default class extends BaseModel {
     }),
     filterUsers: many('User', 'filterBoards'),
     filterLabels: many('Label', 'filterBoards'),
+    filterExcludedLabels: many('Label', 'filterExcludedBoards'),
+    filterNoMember: attr({
+      getDefault: () => false,
+    }),
+    filterLists: many('List', 'filterBoards'),
   };
 
   static reducer({ type, payload }, Board) {
@@ -254,6 +265,37 @@ export default class extends BaseModel {
         Board.withId(payload.boardId).filterLabels.remove(payload.id);
 
         break;
+      case ActionTypes.LABEL_FILTER_IN_BOARD_UPDATE: {
+        const boardModel = Board.withId(payload.boardId);
+
+        try {
+          boardModel.filterLabels.remove(payload.id);
+        } catch {
+          /* empty */
+        }
+
+        try {
+          boardModel.filterExcludedLabels.remove(payload.id);
+        } catch {
+          /* empty */
+        }
+
+        if (payload.mode === LabelFilterModes.INCLUDE) {
+          boardModel.filterLabels.add(payload.id);
+        } else if (payload.mode === LabelFilterModes.EXCLUDE) {
+          boardModel.filterExcludedLabels.add(payload.id);
+        }
+
+        break;
+      }
+      case ActionTypes.LIST_TO_BOARD_FILTER_ADD:
+        Board.withId(payload.boardId).filterLists.add(payload.id);
+
+        break;
+      case ActionTypes.LIST_FROM_BOARD_FILTER_REMOVE:
+        Board.withId(payload.boardId).filterLists.remove(payload.id);
+
+        break;
       case ActionTypes.ACTIVITIES_IN_BOARD_FETCH:
         Board.withId(payload.boardId).update({
           isActivitiesFetching: true,
@@ -270,6 +312,17 @@ export default class extends BaseModel {
         });
 
         break;
+      case ActionTypes.NO_MEMBER_TO_BOARD_FILTER_SET: {
+        const boardModel = Board.withId(payload.boardId);
+        boardModel.filterUsers.clear();
+        boardModel.update({ filterNoMember: true });
+        break;
+      }
+      case ActionTypes.NO_MEMBER_FROM_BOARD_FILTER_REMOVE: {
+        const boardModel = Board.withId(payload.boardId);
+        boardModel.update({ filterNoMember: false });
+        break;
+      }
       default:
     }
   }
@@ -381,12 +434,23 @@ export default class extends BaseModel {
     }
 
     const filterLabelIds = this.filterLabels.toRefArray().map((label) => label.id);
+    const filterExcludedLabelIds = this.filterExcludedLabels.toRefArray().map((label) => label.id);
 
-    if (filterLabelIds.length > 0) {
-      cardModels = cardModels.filter((cardModel) => {
-        const labels = cardModel.labels.toRefArray();
-        return labels.some((label) => filterLabelIds.includes(label.id));
-      });
+    if (filterLabelIds.length > 0 || filterExcludedLabelIds.length > 0) {
+      cardModels = filterCardLabels(cardModels, filterLabelIds, filterExcludedLabelIds);
+    }
+
+    // The three filters below are independent of one another and compose: a
+    // board can be narrowed to unassigned cards AND to a set of lists at the
+    // same time, so neither one may return early.
+    if (this.filterNoMember) {
+      cardModels = cardModels.filter((cardModel) => cardModel.users.toRefArray().length === 0);
+    }
+
+    const filterListIds = this.filterLists.toRefArray().map((list) => list.id);
+
+    if (filterListIds.length > 0) {
+      cardModels = cardModels.filter((cardModel) => filterListIds.includes(cardModel.listId));
     }
 
     return cardModels;
@@ -444,6 +508,8 @@ export default class extends BaseModel {
   deleteClearable() {
     this.filterUsers.clear();
     this.filterLabels.clear();
+    this.filterExcludedLabels.clear();
+    this.filterLists.clear();
   }
 
   deleteRelated(exceptMemberUserId, soft) {
