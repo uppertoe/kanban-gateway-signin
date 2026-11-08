@@ -83,9 +83,12 @@ board=$(admin /projects/$project/boards '{"name":"Board","position":65536}')
 list=$(admin /boards/$board/lists '{"type":"active","name":"List","position":65536}')
 card=$(admin /lists/$list/cards '{"type":"project","name":"Card","position":65536}')
 admin /boards/$board/board-memberships "{\"userId\":\"$samid\",\"role\":\"editor\"}" >/dev/null
+# Sam's own automatic sign-out is set to two minutes; in gateway mode it is
+# off, so the browser stays idle past it below and must still be signed in.
+sql "update user_account set auto_logout_mode = '2m' where id = '$samid'" >/dev/null
 check "card set up on a board with Sam as a member" "$(sql "select count(*) from board_membership where board_id='$board' and user_id='$samid'")" "1"
-result=$(docker compose run --rm -T browser sh -c 'cd /tmp && npm install --silent --no-save playwright-core@1.58.2 >/dev/null 2>&1 && NODE_PATH=/tmp/node_modules node /e2e/description.cjs "$0" "$1"' "$card" "Edited by a member with no username" 2>&1 | tail -1)
-check "member with no username edits a card description in the browser" "$result" "saved"
+result=$(docker compose run --rm -T browser sh -c 'cd /tmp && npm install --silent --no-save playwright-core@1.58.2 >/dev/null 2>&1 && NODE_PATH=/tmp/node_modules node /e2e/description.cjs "$0" "$1" "$2"' "$card" "Edited by a member with no username" 135 2>&1 | tail -1)
+check "member with no username edits a card description, then stays signed in while idle" "$result" "saved"
 check "description saved" "$(sql "select description from card where id='$card'")" "Edited by a member with no username"
 
 # An administrator deactivates Jane: she stays out despite her group.

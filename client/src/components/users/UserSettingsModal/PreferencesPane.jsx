@@ -34,6 +34,10 @@ const AUTO_LOGOUT_TRANSLATION_KEYS = {
 
 const PreferencesPane = React.memo(() => {
   const user = useSelector(selectors.selectCurrentUser);
+  // Gateway sign-in (local modification): the automatic sign-out is off, so
+  // its setting is not shown.
+  const bootstrap = useSelector(selectors.selectBootstrap);
+  const withAutoLogout = !(bootstrap && bootstrap.gateway);
 
   const dispatch = useDispatch();
   const [t] = useTranslation();
@@ -98,17 +102,19 @@ const PreferencesPane = React.memo(() => {
         className={styles.radio}
         onChange={handleChange}
       />
-      <div className={styles.field}>
-        <span className={styles.label}>{t('common.autoLogout')}</span>
-        <Dropdown
-          fluid
-          selection
-          className={styles.dropdown}
-          options={autoLogoutOptions}
-          value={autoLogoutValue}
-          onChange={handleAutoLogoutChange}
-        />
-      </div>
+      {withAutoLogout && (
+        <div className={styles.field}>
+          <span className={styles.label}>{t('common.autoLogout')}</span>
+          <Dropdown
+            fluid
+            selection
+            className={styles.dropdown}
+            options={autoLogoutOptions}
+            value={autoLogoutValue}
+            onChange={handleAutoLogoutChange}
+          />
+        </div>
+      )}
     </Tab.Pane>
   );
 });

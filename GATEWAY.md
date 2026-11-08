@@ -84,6 +84,15 @@ All new files carry a header saying that they are a local modification.
 
 ## Other changes
 
+- PLANKA's automatic sign-out after a period without activity is off while
+  gateway sign-in is on, and its setting is not shown in a person's
+  preferences (`client/src/sagas/core/services/auto-logout.js`,
+  `client/src/components/users/UserSettingsModal/PreferencesPane.jsx`). The
+  gateway's session decides how long a person stays signed in, and PLANKA
+  signs them straight back in while it lasts, so the timer only interrupted
+  people, and it sent them to the gateway's sign-out page. Signing out in one
+  tab still signs out the others.
+
 - The "Discover PLANKA Pro" promotional banner at the top of the page is not
   shown (`client/src/components/common/Fixed/Fixed.jsx`), and nor is the
   "Discover PLANKA Pro" / "Upgrade team to Pro" item in the user menu
