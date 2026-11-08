@@ -47,6 +47,15 @@ const MODE_CHANGE_TRIGGER_TYPES = [
 ];
 
 const selectCurrentUserAutoLogoutMode = (state) => {
+  // Gateway sign-in (local modification): the gateway's session decides how
+  // long a person stays signed in, and PLANKA signs them straight back in
+  // while it lasts, so an idle timer here would only interrupt them. NEVER
+  // still signs this tab out when another tab signs out deliberately.
+  const bootstrap = selectors.selectBootstrap(state);
+  if (bootstrap && bootstrap.gateway) {
+    return AutoLogoutModes.NEVER;
+  }
+
   const user = selectors.selectCurrentUser(state);
   return user ? user.autoLogoutMode : null;
 };
