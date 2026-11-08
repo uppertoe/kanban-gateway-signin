@@ -91,6 +91,18 @@ result=$(docker compose run --rm -T browser sh -c 'cd /tmp && npm install --sile
 check "member with no username edits a card description, then stays signed in while idle" "$result" "saved"
 check "description saved" "$(sql "select description from card where id='$card'")" "Edited by a member with no username"
 
+# Under gateway sign-in an administrator adds a person by email and name
+# alone: the account has no password, and its role starts at Board User until
+# the person's groups set it at their first sign-in. A password and role sent
+# anyway are ignored.
+api_add() { code -b /tmp/e2e_jar -X POST $P/api/users -H "authorization: Bearer $admintok" -H "x-gateway-secret: $S" -H 'remote-email: admin@example.org' -H 'remote-groups: planka-admins' -H 'content-type: application/json' -d "$1"; }
+check "admin adds a user without a password" "$(api_add '{"email":"lee.wong@example.org","name":"Lee Wong"}')" "200"
+check "user added without a password or role has neither set" "$(sql "select role||'|'||coalesce(password, 'none') from user_account where email='lee.wong@example.org'")" "boardUser|none"
+check "a password and role sent anyway are ignored" "$(api_add '{"email":"kim.ng@example.org","name":"Kim Ng","password":"Some-Password-123","role":"admin"}') $(sql "select role||'|'||coalesce(password, 'none') from user_account where email='kim.ng@example.org'")" "200 boardUser|none"
+result=$(docker compose run --rm -T -e GATEWAY_EMAIL=admin@example.org -e GATEWAY_GROUPS=planka-admins browser sh -c 'cd /tmp && npm install --silent --no-save playwright-core@1.58.2 >/dev/null 2>&1 && NODE_PATH=/tmp/node_modules node /e2e/add-user.cjs "$0" "$1"' "ana.ruiz@example.org" "Ana Ruiz" 2>&1 | tail -1)
+check "admin adds a user in the browser with no password or role asked" "$result" "added"
+check "user added in the browser" "$(sql "select role||'|'||name from user_account where email='ana.ruiz@example.org'")" "boardUser|Ana Ruiz"
+
 # An administrator deactivates Jane: she stays out despite her group.
 code -b /tmp/e2e_jar -X PATCH $P/api/users/$janeid -H "authorization: Bearer $admintok" -H "x-gateway-secret: $S" -H 'remote-email: admin@example.org' -H 'remote-groups: planka-admins' -H 'content-type: application/json' -d '{"isDeactivated":true}' >/dev/null
 c=$(code -X POST $P/api/access-tokens/exchange-with-gateway -H "x-gateway-secret: $S" -H 'remote-email: jane.citizen@example.org' -H 'remote-groups: planka-users')

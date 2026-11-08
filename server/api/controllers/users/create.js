@@ -120,6 +120,12 @@ const Errors = {
   ACTIVE_LIMIT_REACHED: {
     activeLimitReached: 'Active limit reached',
   },
+  PASSWORD_REQUIRED: {
+    passwordRequired: 'Password is required',
+  },
+  ROLE_REQUIRED: {
+    roleRequired: 'Role is required',
+  },
 };
 
 module.exports = {
@@ -130,16 +136,16 @@ module.exports = {
       isEmail: true,
       required: true,
     },
+    // Required unless gateway sign-in is on (checked in fn; local modification).
     password: {
       type: 'string',
       maxLength: 256,
       custom: isPassword,
-      required: true,
     },
+    // Required unless gateway sign-in is on (checked in fn; local modification).
     role: {
       type: 'string',
       isIn: Object.values(User.Roles),
-      required: true,
     },
     name: {
       type: 'string',
@@ -195,6 +201,12 @@ module.exports = {
     activeLimitReached: {
       responseType: 'conflict',
     },
+    passwordRequired: {
+      responseType: 'unprocessableEntity',
+    },
+    roleRequired: {
+      responseType: 'unprocessableEntity',
+    },
   },
 
   async fn(inputs) {
@@ -213,6 +225,19 @@ module.exports = {
       'subscribeToCardWhenCommenting',
       'turnOffRecentCardHighlighting',
     ]);
+
+    // Gateway sign-in (local modification): a person signs in through the
+    // gateway, so the account has no password, as an account the gateway
+    // creates has none. The role follows the person's gateway groups from
+    // their first sign-in, so it starts at the lowest.
+    if (sails.config.custom.gatewayAuthEnabled) {
+      delete values.password;
+      values.role = User.Roles.BOARD_USER;
+    } else if (!values.password) {
+      throw Errors.PASSWORD_REQUIRED;
+    } else if (!values.role) {
+      throw Errors.ROLE_REQUIRED;
+    }
 
     const user = await sails.helpers.users.createOne
       .with({
