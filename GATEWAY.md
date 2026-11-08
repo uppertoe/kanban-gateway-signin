@@ -76,7 +76,11 @@ All new files carry a header saying that they are a local modification.
 - Changed: the settings (`config/custom.js`), routes and policies; the
   current-user hook (the per-request identity and role check, with tests in
   `server/test/hooks/current-user-gateway.test.js`); the user update
-  controller (role edits refused); the bootstrap response (`gateway` field);
+  controller (role edits refused); the user create controller and the
+  administration's add-user form (no password and no role: an account added
+  by an administrator has no password, like one the gateway creates, and its
+  role starts at Board User until the person's groups set it at their first
+  sign-in); the bootstrap response (`gateway` field);
   the client login saga, logout service and token API.
 - Changed: upstream migration `20260807120000_remove_single_sign_on_support`
   no longer deactivates accounts that used single sign-on. Those accounts keep

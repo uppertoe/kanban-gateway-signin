@@ -59,6 +59,10 @@ const createMessage = (error) => {
 
 const AddStep = React.memo(({ onClose }) => {
   const { data: defaultData, isSubmitting, error } = useSelector(selectors.selectUserCreateForm);
+  // Gateway sign-in (local modification): people sign in through the gateway
+  // and their groups set the role, so neither a password nor a role is asked.
+  const bootstrap = useSelector(selectors.selectBootstrap);
+  const withGateway = !!(bootstrap && bootstrap.gateway);
 
   const dispatch = useDispatch();
   const [t] = useTranslation();
@@ -95,7 +99,10 @@ const AddStep = React.memo(({ onClose }) => {
       return;
     }
 
-    if (!cleanData.password || !isPassword(cleanData.password)) {
+    if (withGateway) {
+      delete cleanData.password;
+      delete cleanData.role;
+    } else if (!cleanData.password || !isPassword(cleanData.password)) {
       passwordFieldRef.current.focus();
       return;
     }
@@ -112,7 +119,7 @@ const AddStep = React.memo(({ onClose }) => {
     }
 
     dispatch(entryActions.createUser(cleanData));
-  }, [dispatch, data, emailFieldRef, passwordFieldRef, nameFieldRef, usernameFieldRef]);
+  }, [dispatch, data, withGateway, emailFieldRef, passwordFieldRef, nameFieldRef, usernameFieldRef]);
 
   const handleRoleSelect = useCallback(
     (role) => {
@@ -194,18 +201,22 @@ const AddStep = React.memo(({ onClose }) => {
             className={styles.field}
             onChange={handleFieldChange}
           />
-          <div className={styles.text}>{t('common.password')}</div>
-          <Input.Password
-            withStrengthBar
-            fluid
-            ref={handlePasswordFieldRef}
-            name="password"
-            value={data.password}
-            maxLength={256}
-            readOnly={isSubmitting}
-            className={styles.field}
-            onChange={handleFieldChange}
-          />
+          {!withGateway && (
+            <>
+              <div className={styles.text}>{t('common.password')}</div>
+              <Input.Password
+                withStrengthBar
+                fluid
+                ref={handlePasswordFieldRef}
+                name="password"
+                value={data.password}
+                maxLength={256}
+                readOnly={isSubmitting}
+                className={styles.field}
+                onChange={handleFieldChange}
+              />
+            </>
+          )}
           <div className={styles.text}>{t('common.name')}</div>
           <Input
             fluid
@@ -242,14 +253,16 @@ const AddStep = React.memo(({ onClose }) => {
               disabled={isSubmitting}
               className={styles.button}
             />
-            <Button
-              type="button"
-              className={classNames(styles.button, styles.selectRoleButton)}
-              onClick={handleSelectRoleClick}
-            >
-              <Icon name={UserRoleIcons[data.role]} className={styles.selectRoleButtonIcon} />
-              {t(`common.${data.role}`)}
-            </Button>
+            {!withGateway && (
+              <Button
+                type="button"
+                className={classNames(styles.button, styles.selectRoleButton)}
+                onClick={handleSelectRoleClick}
+              >
+                <Icon name={UserRoleIcons[data.role]} className={styles.selectRoleButtonIcon} />
+                {t(`common.${data.role}`)}
+              </Button>
+            )}
           </div>
         </Form>
       </Popup.Content>
