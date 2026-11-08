@@ -103,6 +103,10 @@ result=$(docker compose run --rm -T -e GATEWAY_EMAIL=admin@example.org -e GATEWA
 check "admin adds a user in the browser with no password or role asked" "$result" "added"
 check "user added in the browser" "$(sql "select role||'|'||name from user_account where email='ana.ruiz@example.org'")" "boardUser|Ana Ruiz"
 
+# Signing out of PLANKA in the browser hands over to the gateway's sign-out.
+result=$(docker compose run --rm -T browser sh -c 'cd /tmp && npm install --silent --no-save playwright-core@1.58.2 >/dev/null 2>&1 && NODE_PATH=/tmp/node_modules node /e2e/logout.cjs "$0"' "https://auth.example.org/logout?rd=http://localhost:1337/" 2>&1 | tail -1)
+check "signing out of PLANKA hands over to the gateway's sign-out" "$result" "handed over"
+
 # An administrator deactivates Jane: she stays out despite her group.
 code -b /tmp/e2e_jar -X PATCH $P/api/users/$janeid -H "authorization: Bearer $admintok" -H "x-gateway-secret: $S" -H 'remote-email: admin@example.org' -H 'remote-groups: planka-admins' -H 'content-type: application/json' -d '{"isDeactivated":true}' >/dev/null
 c=$(code -X POST $P/api/access-tokens/exchange-with-gateway -H "x-gateway-secret: $S" -H 'remote-email: jane.citizen@example.org' -H 'remote-groups: planka-users')
