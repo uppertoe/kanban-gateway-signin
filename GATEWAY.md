@@ -106,14 +106,63 @@ All new files carry a header saying that they are a local modification.
 ## Keeping up with upstream
 
 The modification lives on `main`, and each upstream release is merged into
-it, never rebased, so `main` is never force-pushed. To move to a new release,
-branch from `main` as `upstream/vX.Y.Z`, run `git merge vX.Y.Z`, resolve any
-conflicts in favour of keeping the local modifications listed above, and open
-a pull request. The Gateway build workflow then runs the server tests, builds
-the image and runs the end-to-end check (`gateway-e2e/run.sh <image>`).
+it, never rebased, so `main` is never force-pushed.
 
-The end-to-end check upgrades a real upstream 2.1.1 database to the new image,
-exercises gateway sign-in and role changes with curl, and then signs in a
-gateway-created person (who has no username) in a headless browser, opens a
-card and saves its description. Set `E2E_PORT` to run it beside another stack
-on the same machine.
+### The weekly sync
+
+Every Monday morning (Melbourne time), the Upstream sync workflow
+(`.github/workflows/upstream-sync.yml`, running
+`.github/scripts/upstream-sync.sh`) looks for upstream's newest release. It
+takes the highest `vX.Y.Z` tag among published releases, skipping
+pre-releases and the `planka-X.Y.Z` chart tags. If `main` already contains
+it, the run ends there.
+
+Otherwise the workflow branches from `main` as `upstream/vX.Y.Z` and runs
+`git merge vX.Y.Z`. Upstream workflows that this fork has deleted or that
+upstream has added are dropped, since the fork replaces them.
+
+- **A clean merge** is pushed, and a pull request "Merge upstream PLANKA
+  vX.Y.Z" is opened. The workflow then starts the Gateway build on the
+  branch, which runs the server tests, builds the image and runs the
+  end-to-end check. Nothing is merged automatically: read upstream's release
+  notes, check the build, and merge the pull request yourself.
+- **A conflicting merge** is abandoned, and an issue "Upstream PLANKA vX.Y.Z
+  needs a manual merge" lists the conflicting files. Resolve it by hand as
+  described below.
+- **A release still off `main` after 7 days** gets a reminder issue.
+
+Once the branch `upstream/vX.Y.Z` exists, later runs leave it alone, so
+closing the pull request without merging stops the workflow from reopening
+it. The workflow can also be started by hand from the Actions tab. It uses
+the workflow's own token, so no secret has to be set.
+
+### Merging a release by hand
+
+When the weekly sync reports a conflict, or to merge a release yourself:
+
+```
+git switch -c upstream/vX.Y.Z origin/main
+git fetch https://github.com/plankanban/planka.git tag vX.Y.Z --no-tags
+git merge vX.Y.Z
+```
+
+Resolve each conflict in favour of keeping the local modifications listed
+above, alongside upstream's changes; take upstream's lockfiles, and keep
+upstream's deleted workflows deleted. Then push the branch and open a pull
+request. The Gateway build runs on it as on any pull request.
+
+### The end-to-end check
+
+`gateway-e2e/run.sh <image>` upgrades a real upstream 2.1.1 database to the
+new image and exercises gateway sign-in and role changes with curl,
+including a role change taking effect on the next request. It then drives a
+headless browser:
+
+- a gateway-created person, who has no username, opens a card, saves its
+  description and stays signed in while idle past their own automatic
+  sign-out time;
+- an administrator adds a person through the add-user form, which asks for
+  no password or role;
+- signing out of PLANKA hands over to the gateway's sign-out.
+
+Set `E2E_PORT` to run it beside another stack on the same machine.
