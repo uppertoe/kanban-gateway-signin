@@ -151,6 +151,45 @@ module.exports = function defineGatewayBoardSyncHook(sails) {
       [projectName, boardName, projectId, boardId],
     );
 
+  // Creates a shared project owned by the given administrator and records it
+  // for its marker in one transaction, so that a run cut short can never
+  // leave a project the sync made but did not record. Then tells the
+  // administrators' open pages and the webhooks, as PLANKA's own helper does.
+  const createRecordedProject = async (projectName, boardName, owner) => {
+    const project = await sails.getDatastore().transaction(async (db) => {
+      const created = await Project.create({ type: Project.Types.SHARED, name: projectName })
+        .fetch()
+        .usingConnection(db);
+      await ProjectManager.create({ projectId: created.id, userId: owner.id })
+        .fetch()
+        .usingConnection(db);
+      await sails
+        .sendNativeQuery(
+          'INSERT INTO gateway_board_link (project_name, board_name, project_id, board_id) VALUES ($1, $2, $3, NULL) ON CONFLICT (project_name, board_name) DO UPDATE SET project_id = EXCLUDED.project_id, board_id = NULL',
+          [projectName, boardName, created.id],
+        )
+        .usingConnection(db);
+      return created;
+    });
+
+    const scoper = sails.helpers.projects.makeScoper.with({ record: project });
+    scoper.projectManagerUserIds = [owner.id];
+    const userIds = await scoper.getUserIdsWithFullProjectVisibility();
+    userIds.forEach((userId) => {
+      sails.sockets.broadcast(`user:${userId}`, 'projectCreate', { item: project });
+    });
+
+    const webhooks = await Webhook.qm.getAll();
+    sails.helpers.utils.sendWebhooks.with({
+      webhooks,
+      event: Webhook.Events.PROJECT_CREATE,
+      buildData: () => ({ item: project }),
+      user: owner,
+    });
+
+    return project;
+  };
+
   const createBoard = async (project, boardName, owner) => {
     const projectBoards = await Board.find({ projectId: project.id });
     const position = projectBoards.reduce((max, item) => Math.max(max, item.position), 0) + 65536;
@@ -168,7 +207,7 @@ module.exports = function defineGatewayBoardSyncHook(sails) {
   // creates the project (shared) and the board, unless a project of that name
   // already exists; someone else's project is never taken over, so that
   // marker waits, with an error logged, until the project is renamed.
-  const resolveBoards = async (configuredLinks) => {
+  const resolveBoards = async (configuredLinks, lists) => {
     const boards = new Map();
     const projects = new Map();
     const boardIdByKey = new Map();
@@ -180,8 +219,17 @@ module.exports = function defineGatewayBoardSyncHook(sails) {
     };
 
     const wanted = new Map();
+    // A marker whose groups could not be read this run (not yet approved on
+    // the gateway, for example) creates nothing; a board it already has is
+    // still used.
+    const readable = new Set();
     configuredLinks.forEach((link) => {
-      wanted.set(boardKey(link.projectName, link.boardName), link);
+      const key = boardKey(link.projectName, link.boardName);
+      wanted.set(key, link);
+      const list = lists.get(link.group);
+      if (list && list.ok) {
+        readable.add(key);
+      }
     });
 
     /* eslint-disable no-restricted-syntax, no-await-in-loop */
@@ -195,7 +243,7 @@ module.exports = function defineGatewayBoardSyncHook(sails) {
         project = await Project.qm.getOneById(board.projectId);
       }
 
-      if (!board) {
+      if (!board && readable.has(key)) {
         if (!project) {
           const namedProjects = await Project.find({ name: projectName });
           if (namedProjects.length > 0) {
@@ -207,13 +255,7 @@ module.exports = function defineGatewayBoardSyncHook(sails) {
               `Gateway board sync: there is no active administrator to own a new project, so ${where} was not created`,
             );
           } else {
-            ({ project } = await sails.helpers.projects.createOne.with({
-              values: { type: Project.Types.SHARED, name: projectName },
-              actorUser: owner,
-            }));
-            // Recorded at once, so that a run cut short before the board is
-            // made still finds its own project next time.
-            await recordLink(projectName, boardName, String(project.id), null);
+            project = await createRecordedProject(projectName, boardName, owner);
             sails.log.info(`Gateway board sync: created the project "${projectName}"`);
           }
         }
@@ -282,7 +324,7 @@ module.exports = function defineGatewayBoardSyncHook(sails) {
 
     await createAccounts(lists, usersByEmail, users);
 
-    const { boards, projects, links, heldBoardIds } = await resolveBoards(configuredLinks);
+    const { boards, projects, links, heldBoardIds } = await resolveBoards(configuredLinks, lists);
 
     const boardMemberships =
       boards.size > 0 ? await BoardMembership.qm.getByBoardIds([...boards.keys()]) : [];

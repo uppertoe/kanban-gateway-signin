@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end check of the gateway sign-in patch. Usage: run.sh <patched-image>
+# E2E_SKIP_BROWSER=1 skips the three browser checks, for quicker local runs;
+# CI runs everything.
 set -u
 cd "$(dirname "$0")"
 E2E_PORT=${E2E_PORT:-13370}; export E2E_PORT
@@ -88,9 +90,11 @@ admin /boards/$board/board-memberships "{\"userId\":\"$samid\",\"role\":\"editor
 # off, so the browser stays idle past it below and must still be signed in.
 sql "update user_account set auto_logout_mode = '2m' where id = '$samid'" >/dev/null
 check "card set up on a board with Sam as a member" "$(sql "select count(*) from board_membership where board_id='$board' and user_id='$samid'")" "1"
-result=$(docker compose run --rm -T browser sh -c 'cd /tmp && npm install --silent --no-save playwright-core@1.58.2 >/dev/null 2>&1 && NODE_PATH=/tmp/node_modules node /e2e/description.cjs "$0" "$1" "$2"' "$card" "Edited by a member with no username" 135 2>&1 | tail -1)
-check "member with no username edits a card description, then stays signed in while idle" "$result" "saved"
-check "description saved" "$(sql "select description from card where id='$card'")" "Edited by a member with no username"
+if [ -z "${E2E_SKIP_BROWSER:-}" ]; then
+  result=$(docker compose run --rm -T browser sh -c 'cd /tmp && { [ -d /tmp/node_modules/playwright-core ] || npm install --silent --no-save playwright-core@1.58.2 >/dev/null 2>&1; } && NODE_PATH=/tmp/node_modules node /e2e/description.cjs "$0" "$1" "$2"' "$card" "Edited by a member with no username" 135 2>&1 | tail -1)
+  check "member with no username edits a card description, then stays signed in while idle" "$result" "saved"
+  check "description saved" "$(sql "select description from card where id='$card'")" "Edited by a member with no username"
+fi
 
 # Under gateway sign-in an administrator adds a person by email and name
 # alone: the account has no password, and its role starts at Board User until
@@ -100,13 +104,19 @@ api_add() { code -b /tmp/e2e_jar -X POST $P/api/users -H "authorization: Bearer 
 check "admin adds a user without a password" "$(api_add '{"email":"lee.wong@example.org","name":"Lee Wong"}')" "200"
 check "user added without a password or role has neither set" "$(sql "select role||'|'||coalesce(password, 'none') from user_account where email='lee.wong@example.org'")" "boardUser|none"
 check "a password and role sent anyway are ignored" "$(api_add '{"email":"kim.ng@example.org","name":"Kim Ng","password":"Some-Password-123","role":"admin"}') $(sql "select role||'|'||coalesce(password, 'none') from user_account where email='kim.ng@example.org'")" "200 boardUser|none"
-result=$(docker compose run --rm -T -e GATEWAY_EMAIL=admin@example.org -e GATEWAY_GROUPS=planka-admins browser sh -c 'cd /tmp && npm install --silent --no-save playwright-core@1.58.2 >/dev/null 2>&1 && NODE_PATH=/tmp/node_modules node /e2e/add-user.cjs "$0" "$1"' "ana.ruiz@example.org" "Ana Ruiz" 2>&1 | tail -1)
-check "admin adds a user in the browser with no password or role asked" "$result" "added"
-check "user added in the browser" "$(sql "select role||'|'||name from user_account where email='ana.ruiz@example.org'")" "boardUser|Ana Ruiz"
+if [ -z "${E2E_SKIP_BROWSER:-}" ]; then
+  result=$(docker compose run --rm -T -e GATEWAY_EMAIL=admin@example.org -e GATEWAY_GROUPS=planka-admins browser sh -c 'cd /tmp && { [ -d /tmp/node_modules/playwright-core ] || npm install --silent --no-save playwright-core@1.58.2 >/dev/null 2>&1; } && NODE_PATH=/tmp/node_modules node /e2e/add-user.cjs "$0" "$1"' "ana.ruiz@example.org" "Ana Ruiz" 2>&1 | tail -1)
+  check "admin adds a user in the browser with no password or role asked" "$result" "added"
+  check "user added in the browser" "$(sql "select role||'|'||name from user_account where email='ana.ruiz@example.org'")" "boardUser|Ana Ruiz"
+else
+  api_add '{"email":"ana.ruiz@example.org","name":"Ana Ruiz"}' >/dev/null
+fi
 
 # Signing out of PLANKA in the browser hands over to the gateway's sign-out.
-result=$(docker compose run --rm -T browser sh -c 'cd /tmp && npm install --silent --no-save playwright-core@1.58.2 >/dev/null 2>&1 && NODE_PATH=/tmp/node_modules node /e2e/logout.cjs "$0"' "https://auth.example.org/logout?rd=http://localhost:1337/" 2>&1 | tail -1)
-check "signing out of PLANKA hands over to the gateway's sign-out" "$result" "handed over"
+if [ -z "${E2E_SKIP_BROWSER:-}" ]; then
+  result=$(docker compose run --rm -T browser sh -c 'cd /tmp && { [ -d /tmp/node_modules/playwright-core ] || npm install --silent --no-save playwright-core@1.58.2 >/dev/null 2>&1; } && NODE_PATH=/tmp/node_modules node /e2e/logout.cjs "$0"' "https://auth.example.org/logout?rd=http://localhost:1337/" 2>&1 | tail -1)
+  check "signing out of PLANKA hands over to the gateway's sign-out" "$result" "handed over"
+fi
 
 # Board places from gateway groups. The server's Caddy snippet names each
 # linked board once; PLANKA creates a missing project and board, creates a
@@ -135,7 +145,7 @@ pat DELETE /project-managers/$patmanager >/dev/null
 check "trap set up: only an administrator manages the project, and Pat keeps a board seat" "$(sql "select count(*) from project_manager pm join user_account u on u.id=pm.user_id where pm.project_id='$trapproject' and u.role<>'admin'")|$(sql "select m.role from board_membership m join user_account u on u.id=m.user_id join board b on b.id=m.board_id where b.project_id='$trapproject' and u.email='pat.owner@example.org'")" "0|editor"
 sharedproject=$(admin /projects '{"type":"shared","name":"Shared check"}')
 admin /projects/$sharedproject/boards '{"name":"Board","position":65536}' >/dev/null
-members regs '["sam.taylor@example.org", "Lee.Wong@example.org", "tom.darling2@example.org"]'
+members regs '["sam.taylor@example.org", "Lee.Wong@example.org", "tom.darling2@example.org", "ann.lee3@example.org", "ann.lee@example.org", "john.smith2@example.org", "john.smith3@example.org"]'
 members cons '["ana.ruiz@example.org"]'
 cat > "$MEMBERS_DIR/planka.caddy" <<'SNIPPET'
 planka.example.org {
@@ -144,12 +154,18 @@ planka.example.org {
 	# scaffold-members: regs -- board "Board" in "Shared check" as editor
 	# scaffold-members: regs -- board "Plans" in "Editor check" as editor
 	# scaffold-members: regs -- board "Trap" in "RCH Trap" as editor
+	# scaffold-members: later -- board "Later" in "Later" as viewer
 	# scaffold-members: other -- read for something else
 }
 SNIPPET
 export BOARDS_FILE=/boards/planka.caddy
 docker compose up -d planka >/dev/null 2>&1; sleep 5; wait_up
 for i in $(seq 1 30); do linked=$(boardid 'Linked boards' Registrars); [ -n "$linked" ] && break; sleep 2; done
+if [ -z "$linked" ]; then
+  echo "FAIL the board sync created nothing within a minute; its log says:"
+  docker compose logs planka 2>&1 | grep 'Gateway board sync' | tail -8
+  echo "== $pass passed, $((fail+1)) failed (board checks skipped)"; exit 1
+fi
 for i in $(seq 1 30); do existing=$(boardid Everyone Everyone); [ -n "$existing" ] && break; sleep 2; done
 check "missing project created as shared, and its board" "$(sql "select coalesce(p.owner_project_manager_id::text, 'shared') from project p join board b on b.project_id=p.id where b.id='$linked'")" "shared"
 check "board creator is the longest-standing admin, placed by hand" "$(until_place $linked admin@example.org 'editor|-|0')" "editor|-|0"
@@ -157,6 +173,11 @@ check "account created before sign-in, named without the number" "$(for i in $(s
 check "group member placed as editor, with its grant" "$(until_place $linked sam.taylor@example.org 'editor|-|1')" "editor|-|1"
 check "member matched whatever the address's case" "$(until_place $linked lee.wong@example.org 'editor|-|1')" "editor|-|1"
 check "new account placed on the board" "$(until_place $linked tom.darling2@example.org 'editor|-|1')" "editor|-|1"
+check "a numbered address and its plain form each keep an account and a place" "$(until_place $linked ann.lee@example.org 'editor|-|1')|$(until_place $linked ann.lee3@example.org 'editor|-|1')" "editor|-|1|editor|-|1"
+check "numbered addresses without a plain form stay separate people" "$(until_place $linked john.smith3@example.org 'editor|-|1')|$(place $linked john.smith2@example.org)" "editor|-|1|editor|-|1"
+check "a marker whose group cannot be read yet creates nothing" "$(sql "select count(*) from project where name='Later'")" "0"
+members later '["ana.ruiz@example.org"]'
+check "once the group can be read, the board is created and filled" "$(for i in $(seq 1 30); do b=$(boardid Later Later); [ -n "$b" ] && [ "$(place "$b" ana.ruiz@example.org)" = 'viewer|false|1' ] && break; sleep 2; done; place "$(boardid Later Later)" ana.ruiz@example.org)" "viewer|false|1"
 check "commenter link placed on a second board the sync created" "$(until_place $existing ana.ruiz@example.org 'viewer|true|1')" "viewer|true|1"
 kimid=$(sql "select id from user_account where email='kim.ng@example.org'")
 admin /boards/$existing/board-memberships "{\"userId\":\"$kimid\",\"role\":\"viewer\",\"canComment\":false}" >/dev/null
