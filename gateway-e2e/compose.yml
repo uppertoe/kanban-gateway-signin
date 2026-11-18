@@ -44,8 +44,12 @@ services:
     profiles: [browser]
     network_mode: service:planka
     working_dir: /e2e
-    volumes: ["./:/e2e:ro"]
+    # The browser library is installed once per run into this volume.
+    volumes: ["./:/e2e:ro", "browser_modules:/tmp/node_modules"]
     environment:
       - GATEWAY_SECRET=e2e-gateway-secret-0123456789abcdef
       - GATEWAY_EMAIL=sam.taylor@example.org
       - GATEWAY_GROUPS=planka-users
+
+volumes:
+  browser_modules:

@@ -112,8 +112,10 @@ default), and a few seconds after the gateway creates an account. At each run:
   project with different boards cannot both be served, because the second
   finds a project the sync did not create for it, so it waits with an error.
   Several groups can share one board by naming them on one marker.
-- The sync records a new project the moment it creates it, so a run cut
-  short before the board is made finds its own project next time.
+- The sync creates a new project and its record in one transaction, so a run
+  cut short can never leave a project it made but did not record.
+- A marker creates nothing until at least one of its groups can be read, so
+  no project or board appears before the gateway has approved the group.
 - Members of the group get a place on the board, and a place the group gave
   is removed once the person leaves the group.
 
