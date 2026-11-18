@@ -213,6 +213,16 @@ bgdims=$(docker compose exec -T planka node -e "require('sharp')('/app/data/prot
 thumb=$(docker compose exec -T planka node -e "require('sharp')('/app/data/protected/background-images/$bgfile/outside-360.webp').metadata().then(m=>console.log(m.format+' '+m.width+'x'+m.height)).catch(()=>console.log('missing'))" 2>/dev/null | tail -1)
 check "and resized to 2560 pixels on its longer side, with a 360-pixel WebP picker copy" "$bgdims|$thumb" "webp 2560x1920|webp 480x360"
 
+# A TIFF is refused as a background, and a mirrored photo is stored upright.
+docker compose exec -T planka node -e "const s=require('sharp');Promise.all([s({create:{width:64,height:48,channels:3,background:'#000'}}).tiff().toFile('/tmp/e2e-bg.tiff'),s({create:{width:400,height:200,channels:3,background:'#123'}}).jpeg().withMetadata({orientation:2}).toFile('/tmp/e2e-mirror.jpg')]).then(()=>console.log('made'))" >/dev/null
+docker compose cp planka:/tmp/e2e-bg.tiff /tmp/e2e-bg.tiff >/dev/null 2>&1
+docker compose cp planka:/tmp/e2e-mirror.jpg /tmp/e2e-mirror.jpg >/dev/null 2>&1
+upload() { code -b /tmp/e2e_jar -X POST "$P/api/projects/$bgproject/background-images" -H "authorization: Bearer $admintok" -H "x-gateway-secret: $S" -H 'remote-email: admin@example.org' -H 'remote-groups: planka-admins' -F "file=@$1"; }
+check "a TIFF is refused as a background" "$(upload /tmp/e2e-bg.tiff)" "422"
+upload /tmp/e2e-mirror.jpg >/dev/null
+mirror=$(sql "select uploaded_file_id from background_image where project_id='$bgproject' order by created_at desc limit 1")
+check "a photo tagged as mirrored is stored with no orientation left to apply" "$(docker compose exec -T planka node -e "require('sharp')('/app/data/protected/background-images/$mirror/original.webp').metadata().then(m=>console.log(m.format+' '+m.width+'x'+m.height+' '+(m.orientation||1))).catch(()=>console.log('missing'))" 2>/dev/null | tail -1)" "webp 400x200 1"
+
 # An administrator deactivates Jane: she stays out despite her group.
 code -b /tmp/e2e_jar -X PATCH $P/api/users/$janeid -H "authorization: Bearer $admintok" -H "x-gateway-secret: $S" -H 'remote-email: admin@example.org' -H 'remote-groups: planka-admins' -H 'content-type: application/json' -d '{"isDeactivated":true}' >/dev/null
 c=$(code -X POST $P/api/access-tokens/exchange-with-gateway -H "x-gateway-secret: $S" -H 'remote-email: jane.citizen@example.org' -H 'remote-groups: planka-users')

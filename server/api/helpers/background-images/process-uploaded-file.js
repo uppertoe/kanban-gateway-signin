@@ -17,6 +17,13 @@ const { MAX_SIZE_TO_PROCESS_AS_IMAGE } = require('../../../constants');
 const BACKGROUND_MAX_SIZE = 2560;
 const BACKGROUND_QUALITY = 80;
 const THUMBNAIL_QUALITY = 75;
+// Formats accepted as backgrounds: JPEG, PNG, WebP, GIF and AVIF (which sharp
+// reports as HEIF with AV1 compression; other HEIF is refused), and the
+// largest image decoded, in pixels.
+const BACKGROUND_FORMATS = ['jpeg', 'png', 'webp', 'gif'];
+const isBackgroundFormat = ({ format, compression }) =>
+  BACKGROUND_FORMATS.includes(format) || (format === 'heif' && compression === 'av1');
+const BACKGROUND_MAX_INPUT_PIXELS = 100 * 1000 * 1000;
 
 module.exports = {
   inputs: {
@@ -48,6 +55,7 @@ module.exports = {
 
     let image = sharp(inputs.file.fd, {
       animated: true,
+      limitInputPixels: BACKGROUND_MAX_INPUT_PIXELS,
     });
 
     let metadata;
@@ -58,7 +66,12 @@ module.exports = {
       throw 'fileIsNotImage';
     }
 
-    if (metadata.orientation && metadata.orientation > 4) {
+    if (!isBackgroundFormat(metadata)) {
+      await rimraf(inputs.file.fd);
+      throw 'fileIsNotImage';
+    }
+
+    if (metadata.orientation && metadata.orientation > 1) {
       image = image.rotate();
     }
 
