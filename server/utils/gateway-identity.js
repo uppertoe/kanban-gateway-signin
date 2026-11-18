@@ -16,6 +16,7 @@ const crypto = require('crypto');
 const SECRET_HEADER = 'x-gateway-secret';
 const EMAIL_HEADER = 'remote-email';
 const GROUPS_HEADER = 'remote-groups';
+const ROLES_HEADER = 'remote-roles';
 
 const MIN_SECRET_LENGTH = 32;
 
@@ -57,9 +58,14 @@ const EMAIL_PATTERN = /^[^\s@:,]+@[^\s@:,]+\.[^\s@:,]+$/;
 /**
  * @param {object} headers Lower-cased request headers (Node's req.headers).
  * @param {string} secret The shared secret configured for the gateway.
- * @returns {{ email: string, groups: string[] } | null}
+ * @param {{ trustRoles?: boolean }} [options] trustRoles (TRUST_REMOTE_ROLES)
+ *   lets Remote-Roles decide the role. Without it a Remote-Roles header is
+ *   ignored, because a proxy that predates app roles passes a client's copy
+ *   through.
+ * @returns {{ email: string, groups: string[], roles?: string[] } | null}
+ *   roles is present only when trusted and the gateway sent the header.
  */
-const readGatewayIdentity = (headers, secret) => {
+const readGatewayIdentity = (headers, secret, { trustRoles = false } = {}) => {
   if (!headers || !isSecretValid(readHeader(headers, SECRET_HEADER), secret)) {
     return null;
   }
@@ -74,10 +80,18 @@ const readGatewayIdentity = (headers, secret) => {
     return null;
   }
 
-  return {
+  const identity = {
     email,
     groups: parseList(readHeader(headers, GROUPS_HEADER)),
   };
+
+  if (trustRoles && Object.prototype.hasOwnProperty.call(headers, ROLES_HEADER)) {
+    // A copy that is not a single string is read as no roles, which leaves the
+    // person a Board User rather than guessing which copy is genuine.
+    identity.roles = parseList(readHeader(headers, ROLES_HEADER));
+  }
+
+  return identity;
 };
 
 /**
@@ -97,12 +111,35 @@ const resolveRole = (groups, roleGroups) => {
 };
 
 /**
+ * The PLANKA role for a gateway identity. When the gateway sent the person's
+ * app roles (and they are trusted), the roles alone decide: "admin" makes an
+ * Admin, "owner" a Project Owner, and anything else a Board User, because the
+ * gateway's role guard has already let the person in. Otherwise the person's
+ * gateway groups decide through the configured role groups.
+ *
+ * @param {{ groups: string[], roles?: string[] }} identity From readGatewayIdentity.
+ * @param {{ admin: string[], projectOwner: string[], boardUser: string[] }} roleGroups
+ * @returns {string | null}
+ */
+const resolveIdentityRole = (identity, roleGroups) => {
+  if (Array.isArray(identity.roles)) {
+    if (identity.roles.includes('admin')) {
+      return 'admin';
+    }
+
+    return identity.roles.includes('owner') ? 'projectOwner' : 'boardUser';
+  }
+
+  return resolveRole(identity.groups, roleGroups);
+};
+
+/**
  * Checks a signed-in PLANKA user against the gateway identity on a later
  * request. Returns the role that the gateway now implies for that user, or
  * null when the gateway no longer vouches for them: no trusted identity, a
  * different person, or a person who has lost every PLANKA group.
  *
- * @param {{ email: string, groups: string[] } | null} identity From readGatewayIdentity.
+ * @param {{ email: string, groups: string[], roles?: string[] } | null} identity From readGatewayIdentity.
  * @param {string} userEmail The email of the user who owns the session.
  * @param {{ admin: string[], projectOwner: string[], boardUser: string[] }} roleGroups
  * @returns {string | null}
@@ -112,7 +149,7 @@ const resolveVouchedRole = (identity, userEmail, roleGroups) => {
     return null;
   }
 
-  return resolveRole(identity.groups, roleGroups);
+  return resolveIdentityRole(identity, roleGroups);
 };
 
 // "jane.citizen@example.org" -> "Jane Citizen". Only used when an account is
@@ -141,6 +178,7 @@ module.exports = {
   parseList,
   readGatewayIdentity,
   resolveRole,
+  resolveIdentityRole,
   resolveVouchedRole,
   nameFromEmail,
 };

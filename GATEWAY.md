@@ -53,6 +53,7 @@ configured groups cannot use PLANKA. Project and board permissions are managed i
 | `GATEWAY_ADMIN_GROUPS` | Gateway groups whose members become Admin. |
 | `GATEWAY_PROJECT_OWNER_GROUPS` | Gateway groups whose members become Project Owner. |
 | `GATEWAY_BOARD_USER_GROUPS` | Gateway groups whose members become Board User. |
+| `TRUST_REMOTE_ROLES` | `true` lets the gateway's `Remote-Roles` header decide the role (see below). Off by default. |
 | `GATEWAY_LOGOUT_URL` | Where the browser goes after signing out of PLANKA. |
 | `GATEWAY_BOARDS_FILE` | The server's Caddy snippet for PLANKA, whose members markers link boards to gateway groups (see below). Optional. |
 | `GATEWAY_MEMBERS_URL` | The gateway members endpoint. `http://auth-members:8081` by default. |
@@ -61,7 +62,17 @@ configured groups cannot use PLANKA. Project and board permissions are managed i
 
 Group lists are separated by commas or spaces. A person in several groups gets
 the highest role. PLANKA refuses to start when `GATEWAY_AUTH=true` and the
-secret is short or no group is configured.
+secret is short, or when no group is configured and `TRUST_REMOTE_ROLES` is off.
+
+When the gateway guards PLANKA with app roles, it sends the person's roles in
+PLANKA as `Remote-Roles`. With `TRUST_REMOTE_ROLES=true` and that header
+present, the roles alone decide: `admin` makes an Admin, `owner` a Project
+Owner, and any other role, or none, a Board User. The group settings then play
+no part for that person. Without the header, or with the setting off, the
+groups decide as before and a `Remote-Roles` header is ignored. Turn the
+setting on only in the same server change that makes the proxy strip a
+client-sent `Remote-Roles` on every route; behind an older proxy, anyone
+signed in could otherwise name themselves an Admin.
 
 The proxy must strip any client-supplied `Remote-*` and `X-Gateway-Secret`
 headers before it adds its own, and PLANKA must not be reachable except

@@ -23,7 +23,9 @@ module.exports = function defineCurrentUserHook(sails) {
   // Returns the user to treat as signed in, or null to treat the request as
   // signed out (the client then signs in afresh).
   const applyGatewayIdentity = async (req, user) => {
-    const { gatewayAuthEnabled, gatewayAuthSecret, gatewayRoleGroups } = sails.config.custom;
+    const { gatewayAuthEnabled, gatewayAuthSecret, gatewayRoleGroups, gatewayTrustRoles } =
+      sails.config.custom;
+    const identityOptions = { trustRoles: gatewayTrustRoles };
 
     if (!gatewayAuthEnabled) {
       return user;
@@ -37,7 +39,11 @@ module.exports = function defineCurrentUserHook(sails) {
       // Writing that role back could undo a newer change, so the request is
       // refused instead and the client signs in again on a new connection.
       const { handshake } = req.socket || {};
-      const identity = readGatewayIdentity(handshake && handshake.headers, gatewayAuthSecret);
+      const identity = readGatewayIdentity(
+        handshake && handshake.headers,
+        gatewayAuthSecret,
+        identityOptions,
+      );
 
       if (!identity) {
         return user;
@@ -48,7 +54,7 @@ module.exports = function defineCurrentUserHook(sails) {
         : null;
     }
 
-    const identity = readGatewayIdentity(req.headers, gatewayAuthSecret);
+    const identity = readGatewayIdentity(req.headers, gatewayAuthSecret, identityOptions);
     const role = resolveVouchedRole(identity, user.email, gatewayRoleGroups);
 
     if (!role) {

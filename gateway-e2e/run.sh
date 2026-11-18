@@ -244,6 +244,17 @@ upload /tmp/e2e-mirror.jpg >/dev/null
 mirror=$(sql "select uploaded_file_id from background_image where project_id='$bgproject' order by created_at desc limit 1")
 check "a photo tagged as mirrored is stored with no orientation left to apply" "$(docker compose exec -T planka node -e "require('sharp')('/app/data/protected/background-images/$mirror/original.webp').metadata().then(m=>console.log(m.format+' '+m.width+'x'+m.height+' '+(m.orientation||1))).catch(()=>console.log('missing'))" 2>/dev/null | tail -1)" "webp 400x200 1"
 
+# Remote-Roles: ignored while TRUST_REMOTE_ROLES is off, and alone decides once it is on.
+janerole() { code -X POST $P/api/access-tokens/exchange-with-gateway -H "x-gateway-secret: $S" -H 'remote-email: jane.citizen@example.org' "$@" >/dev/null; sql "select role from user_account where email='jane.citizen@example.org'"; }
+check "a forged Remote-Roles is ignored while the setting is off" "$(janerole -H 'remote-groups: planka-users' -H 'remote-roles: admin')" "boardUser"
+export TRUST_REMOTE_ROLES=true; docker compose up -d planka >/dev/null 2>&1; sleep 5; wait_up
+check "Remote-Roles owner makes a project owner" "$(janerole -H 'remote-groups: planka-users' -H 'remote-roles: user, owner')" "projectOwner"
+check "Remote-Roles admin makes an admin" "$(janerole -H 'remote-groups: planka-users' -H 'remote-roles: admin')" "admin"
+check "Remote-Roles alone decides over an admin group" "$(janerole -H 'remote-groups: planka-admins' -H 'remote-roles: user')" "boardUser"
+check "groups decide when Remote-Roles is absent" "$(janerole -H 'remote-groups: planka-owners')" "projectOwner"
+check "groups decide when Remote-Roles is absent, back to board user" "$(janerole -H 'remote-groups: planka-users')" "boardUser"
+export TRUST_REMOTE_ROLES=; docker compose up -d planka >/dev/null 2>&1; sleep 5; wait_up
+
 # An administrator deactivates Jane: she stays out despite her group.
 code -b /tmp/e2e_jar -X PATCH $P/api/users/$janeid -H "authorization: Bearer $admintok" -H "x-gateway-secret: $S" -H 'remote-email: admin@example.org' -H 'remote-groups: planka-admins' -H 'content-type: application/json' -d '{"isDeactivated":true}' >/dev/null
 c=$(code -X POST $P/api/access-tokens/exchange-with-gateway -H "x-gateway-secret: $S" -H 'remote-email: jane.citizen@example.org' -H 'remote-groups: planka-users')
