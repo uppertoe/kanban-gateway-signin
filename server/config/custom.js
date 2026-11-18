@@ -15,6 +15,7 @@ const { URL } = require('url');
 const bytes = require('bytes');
 const sails = require('sails');
 
+const fs = require('fs');
 const version = require('../version');
 
 const envToNumber = (value) => {
@@ -89,7 +90,9 @@ const parsedBasedUrl = parsedBaseUrls[0];
 // Gateway sign-in (local modification, see GATEWAY.md). When enabled, PLANKA
 // trusts the identity headers of the authenticating reverse proxy in front of
 // it, and password sign-in is switched off.
+
 const gatewayIdentity = require('../utils/gateway-identity');
+const gatewayBoardGroups = require('../utils/gateway-board-groups');
 
 const gatewayConfig = (() => {
   const gatewayAuthEnabled = process.env.GATEWAY_AUTH === 'true';
@@ -115,11 +118,72 @@ const gatewayConfig = (() => {
     throw new Error('GATEWAY_AUTH=true needs at least one of the GATEWAY_*_GROUPS settings');
   }
 
+  // Boards whose places follow gateway groups (see utils/gateway-board-groups):
+  // the members markers in the server's Caddy snippet for PLANKA.
+  // A problem here turns the board sync off and is logged at start-up
+  // (gatewayBoardSyncError); PLANKA itself keeps running.
+  let boardSync = null;
+  let boardSyncError = null;
+  const boardsFile = process.env.GATEWAY_BOARDS_FILE;
+
+  if (boardsFile) {
+    try {
+      let boardsText;
+      try {
+        boardsText = fs.readFileSync(boardsFile, 'utf8');
+      } catch (error) {
+        throw new Error(`GATEWAY_BOARDS_FILE cannot be read: ${error.message}`);
+      }
+
+      const { links, ignored } = gatewayBoardGroups.parseBoardMarkers(boardsText);
+
+      if (links.length > 0) {
+        const membersUrl = (process.env.GATEWAY_MEMBERS_URL || 'http://auth-members:8081').replace(
+          /\/+$/,
+          '',
+        );
+        const membersToken = process.env.GATEWAY_MEMBERS_TOKEN || '';
+
+        if (!/^https?:\/\/[^/\s@]+$/.test(membersUrl)) {
+          throw new Error(
+            'GATEWAY_MEMBERS_URL must be the address of the gateway members endpoint, such as http://auth-members:8081',
+          );
+        }
+
+        if (membersToken.length < gatewayBoardGroups.MIN_TOKEN_LENGTH) {
+          throw new Error(
+            `GATEWAY_MEMBERS_TOKEN must be set to PLANKA's members token, at least ${gatewayBoardGroups.MIN_TOKEN_LENGTH} characters`,
+          );
+        }
+
+        const intervalSeconds = Number(process.env.GATEWAY_BOARD_SYNC_INTERVAL || '300');
+        if (!Number.isInteger(intervalSeconds) || intervalSeconds < 5) {
+          throw new Error(
+            'GATEWAY_BOARD_SYNC_INTERVAL must be a whole number of seconds, at least 5',
+          );
+        }
+
+        boardSync = {
+          links,
+          ignored,
+          membersUrl,
+          membersToken,
+          intervalMs: intervalSeconds * 1000,
+        };
+      }
+    } catch (error) {
+      boardSync = null;
+      boardSyncError = error.message;
+    }
+  }
+
   return {
     gatewayAuthEnabled,
     gatewayAuthSecret,
     gatewayRoleGroups: roleGroups,
     gatewayLogoutUrl: process.env.GATEWAY_LOGOUT_URL || null,
+    gatewayBoardSync: boardSync,
+    gatewayBoardSyncError: boardSyncError,
   };
 })();
 

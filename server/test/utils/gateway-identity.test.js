@@ -153,8 +153,14 @@ describe('gateway-identity', () => {
   describe('nameFromEmail', () => {
     it('builds a display name from the local part', () => {
       expect(nameFromEmail('jane.citizen@example.org')).to.equal('Jane Citizen');
-      expect(nameFromEmail('j_smith-jones@example.org')).to.equal('J Smith Jones');
+      expect(nameFromEmail('j_smith-jones@example.org')).to.equal('J Smith-Jones');
       expect(nameFromEmail('upperteam@example.org')).to.equal('Upperteam');
+    });
+
+    it('drops the number added to tell two people apart', () => {
+      expect(nameFromEmail('tom.darling2@example.org')).to.equal('Tom Darling');
+      expect(nameFromEmail('Ann.Lee12@example.org')).to.equal('Ann Lee');
+      expect(nameFromEmail('team2024@example.org')).to.equal('Team2024');
     });
   });
 });

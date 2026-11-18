@@ -11,6 +11,7 @@ wait_up() { for i in $(seq 1 90); do curl -fs -o /dev/null $P/api/bootstrap && r
 sql() { docker compose exec -T db psql -U planka -d planka -tAc "$1"; }
 code() { curl -s -o /tmp/e2e_body -w '%{http_code}' "$@"; }
 
+MEMBERS_DIR=$(mktemp -d); export MEMBERS_DIR; chmod 755 "$MEMBERS_DIR"; export BOARDS_FILE=
 export PLANKA_IMAGE=x; docker compose down -v >/dev/null 2>&1
 echo "== phase 1: upstream 2.1.1 with an SSO-flagged account"
 export PLANKA_IMAGE=ghcr.io/plankanban/planka:2.1.1; docker compose up -d >/dev/null 2>&1; wait_up
@@ -107,10 +108,104 @@ check "user added in the browser" "$(sql "select role||'|'||name from user_accou
 result=$(docker compose run --rm -T browser sh -c 'cd /tmp && npm install --silent --no-save playwright-core@1.58.2 >/dev/null 2>&1 && NODE_PATH=/tmp/node_modules node /e2e/logout.cjs "$0"' "https://auth.example.org/logout?rd=http://localhost:1337/" 2>&1 | tail -1)
 check "signing out of PLANKA hands over to the gateway's sign-out" "$result" "handed over"
 
+# Board places from gateway groups. The server's Caddy snippet names each
+# linked board once; PLANKA creates a missing project and board, creates a
+# named account for every group member, and keeps the places in step. Kim is
+# added by hand to a board the sync created and then joins a linked group, so
+# that place must stay untouched. The sync only ever uses boards it created:
+# a project of a marker's name that already exists is never taken over.
+members() { printf '%s' "$2" > "$MEMBERS_DIR/$1.json"; }
+boardid() { sql "select b.id from board b join project p on p.id=b.project_id where p.name='$1' and b.name='$2'"; }
+place() { sql "select m.role||'|'||coalesce(m.can_comment::text,'-')||'|'||(select count(*) from gateway_board_grant g where g.board_id=m.board_id and g.user_id=m.user_id) from board_membership m join user_account u on u.id=m.user_id where m.board_id='$1' and u.email='$2'"; }
+until_place() { for i in $(seq 1 30); do [ "$(place "$1" "$2")" = "$3" ] && break; sleep 2; done; place "$1" "$2"; }
+# A Project Owner prepares a shared project and board of a marker's names,
+# hands the project to an administrator, leaves its managers and keeps an
+# editor seat on the board. The sync must not take that board over.
+c=$(code -X POST "$P/api/access-tokens/exchange-with-gateway" -H "x-gateway-secret: $S" -H 'remote-email: pat.owner@example.org' -H 'remote-groups: planka-owners')
+pending=$(grep -o '"pendingToken":"[^"]*"' /tmp/e2e_body | cut -d'"' -f4)
+if [ -n "$pending" ]; then code -X POST $P/api/access-tokens/accept-terms -H 'content-type: application/json' -d "{\"pendingToken\":\"$pending\",\"signature\":\"$sig\"}" >/dev/null; fi
+pattok=$(grep -o '"item":"[^"]*"' /tmp/e2e_body | cut -d'"' -f4)
+pat() { curl -s -X "$1" "$P/api$2" -H "authorization: Bearer $pattok" -H "x-gateway-secret: $S" -H 'remote-email: pat.owner@example.org' -H 'remote-groups: planka-owners' -H 'content-type: application/json' ${3:+-d "$3"}; }
+trapproject=$(pat POST /projects '{"type":"shared","name":"RCH Trap"}' | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+pat POST /projects/$trapproject/boards '{"name":"Trap","position":65536}' >/dev/null
+adminid=$(sql "select id from user_account where email='admin@example.org'")
+pat POST /projects/$trapproject/project-managers "{\"userId\":\"$adminid\"}" >/dev/null
+patmanager=$(sql "select pm.id from project_manager pm join user_account u on u.id=pm.user_id where pm.project_id='$trapproject' and u.email='pat.owner@example.org'")
+pat DELETE /project-managers/$patmanager >/dev/null
+check "trap set up: only an administrator manages the project, and Pat keeps a board seat" "$(sql "select count(*) from project_manager pm join user_account u on u.id=pm.user_id where pm.project_id='$trapproject' and u.role<>'admin'")|$(sql "select m.role from board_membership m join user_account u on u.id=m.user_id join board b on b.id=m.board_id where b.project_id='$trapproject' and u.email='pat.owner@example.org'")" "0|editor"
+sharedproject=$(admin /projects '{"type":"shared","name":"Shared check"}')
+admin /projects/$sharedproject/boards '{"name":"Board","position":65536}' >/dev/null
+members regs '["sam.taylor@example.org", "Lee.Wong@example.org", "tom.darling2@example.org"]'
+members cons '["ana.ruiz@example.org"]'
+cat > "$MEMBERS_DIR/planka.caddy" <<'SNIPPET'
+planka.example.org {
+	# scaffold-members: regs -- board "Registrars" in "Linked boards" as editor
+	# scaffold-members: cons, regs -- board "Everyone" in "Everyone" as commenter
+	# scaffold-members: regs -- board "Board" in "Shared check" as editor
+	# scaffold-members: regs -- board "Plans" in "Editor check" as editor
+	# scaffold-members: regs -- board "Trap" in "RCH Trap" as editor
+	# scaffold-members: other -- read for something else
+}
+SNIPPET
+export BOARDS_FILE=/boards/planka.caddy
+docker compose up -d planka >/dev/null 2>&1; sleep 5; wait_up
+for i in $(seq 1 30); do linked=$(boardid 'Linked boards' Registrars); [ -n "$linked" ] && break; sleep 2; done
+for i in $(seq 1 30); do existing=$(boardid Everyone Everyone); [ -n "$existing" ] && break; sleep 2; done
+check "missing project created as shared, and its board" "$(sql "select coalesce(p.owner_project_manager_id::text, 'shared') from project p join board b on b.project_id=p.id where b.id='$linked'")" "shared"
+check "board creator is the longest-standing admin, placed by hand" "$(until_place $linked admin@example.org 'editor|-|0')" "editor|-|0"
+check "account created before sign-in, named without the number" "$(for i in $(seq 1 30); do r=$(sql "select name||'|'||role||'|'||coalesce(password,'none') from user_account where email='tom.darling2@example.org'"); [ -n "$r" ] && break; sleep 2; done; echo "$r")" "Tom Darling|boardUser|none"
+check "group member placed as editor, with its grant" "$(until_place $linked sam.taylor@example.org 'editor|-|1')" "editor|-|1"
+check "member matched whatever the address's case" "$(until_place $linked lee.wong@example.org 'editor|-|1')" "editor|-|1"
+check "new account placed on the board" "$(until_place $linked tom.darling2@example.org 'editor|-|1')" "editor|-|1"
+check "commenter link placed on a second board the sync created" "$(until_place $existing ana.ruiz@example.org 'viewer|true|1')" "viewer|true|1"
+kimid=$(sql "select id from user_account where email='kim.ng@example.org'")
+admin /boards/$existing/board-memberships "{\"userId\":\"$kimid\",\"role\":\"viewer\",\"canComment\":false}" >/dev/null
+members cons '["ana.ruiz@example.org", "kim.ng@example.org"]'; sleep 12
+check "place added by hand left alone after its holder joins a linked group" "$(place $existing kim.ng@example.org)" "viewer|false|0"
+check "marker for another purpose ignored" "$(docker compose logs planka 2>&1 | grep -c 'not a board line was ignored')" "1"
+check "an existing project of a marker's name is never taken over, even an administrator's" "$(sql "select count(*) from gateway_board_link where project_name in ('Shared check', 'Editor check', 'RCH Trap')")|$(sql "select count(*) from gateway_board_grant g join board b on b.id=g.board_id join project p on p.id=b.project_id where p.name in ('Shared check', 'Editor check', 'RCH Trap')")|$(docker compose logs planka 2>&1 | grep -c 'already exists that the sync did not create' | awk '{print ($1>=3)}')" "0|0|1"
+check "the sync records the project and board it created" "$(sql "select count(*) from gateway_board_link where board_id='$existing' and project_id=(select project_id from board where id='$existing')")" "1"
+
+# Renaming a linked board does no harm: the sync keeps using the recorded board.
+sql "update board set name='Registrars 2026' where id='$linked'" >/dev/null
+
+members regs '["sam.taylor@example.org", "tom.darling2@example.org"]'
+check "a person who leaves the group loses the place" "$(until_place $linked lee.wong@example.org '')" ""
+check "and the place on the other linked board" "$(until_place $existing lee.wong@example.org '')" ""
+check "the place added by hand stays" "$(place $existing kim.ng@example.org)" "viewer|false|0"
+
+# A board the sync created and someone deleted is created again in its project.
+everyoneproject=$(sql "select project_id from board where id='$existing'")
+admin_delete() { curl -s -o /dev/null -b /tmp/e2e_jar -X DELETE "$P/api$1" -H "authorization: Bearer $admintok" -H "x-gateway-secret: $S" -H 'remote-email: admin@example.org' -H 'remote-groups: planka-admins'; }
+admin_delete /boards/$existing
+for i in $(seq 1 30); do again=$(boardid Everyone Everyone); [ -n "$again" ] && [ "$again" != "$existing" ] && break; sleep 2; done
+check "a deleted board is created again in the recorded project" "$([ -n "$again" ] && [ "$again" != "$existing" ] && echo new)|$(sql "select project_id from board where id='$again'")|$(sql "select count(*) from project where name='Everyone'")" "new|$everyoneproject|1"
+existing=$again
+check "and its group places come back" "$(until_place $existing ana.ruiz@example.org 'viewer|true|1')" "viewer|true|1"
+
+members regs 'fail'; sleep 12
+check "a failed read removes nobody" "$(place $linked sam.taylor@example.org)" "editor|-|1"
+members regs '[]'; sleep 12
+check "an empty list is held rather than emptying the board" "$(place $linked sam.taylor@example.org)" "editor|-|1"
+
+members regs '["sam.taylor@example.org", "tom.darling2@example.org", "new.starter@example.org"]'
+check "a new member gets an account and a place before signing in" "$(until_place $linked new.starter@example.org 'editor|-|1')" "editor|-|1"
+c=$(code -X POST $P/api/access-tokens/exchange-with-gateway -H "x-gateway-secret: $S" -H 'remote-email: new.starter@example.org' -H 'remote-groups: planka-users regs')
+check "their first sign-in uses that account" "$(sql "select count(*) from user_account where email='new.starter@example.org'")" "1"
+check "a renamed board is kept, and no second board is made" "$(sql "select count(*) from board where name in ('Registrars', 'Registrars 2026')")|$(sql "select name from board where id='$linked'")" "1|Registrars 2026"
+
+# A missing members token turns the sync off and leaves PLANKA running.
+export PLANKA_MEMBERS_TOKEN=short
+docker compose up -d planka >/dev/null 2>&1; sleep 5; wait_up
+check "with no usable token PLANKA still starts and the sync is off" "$(docker compose logs planka 2>&1 | grep -c 'Gateway board sync is off')" "1"
+unset PLANKA_MEMBERS_TOKEN; export BOARDS_FILE=
+docker compose up -d planka >/dev/null 2>&1; sleep 5; wait_up
+
 # An administrator deactivates Jane: she stays out despite her group.
 code -b /tmp/e2e_jar -X PATCH $P/api/users/$janeid -H "authorization: Bearer $admintok" -H "x-gateway-secret: $S" -H 'remote-email: admin@example.org' -H 'remote-groups: planka-admins' -H 'content-type: application/json' -d '{"isDeactivated":true}' >/dev/null
 c=$(code -X POST $P/api/access-tokens/exchange-with-gateway -H "x-gateway-secret: $S" -H 'remote-email: jane.citizen@example.org' -H 'remote-groups: planka-users')
 check "deactivated account refused" "$c $(grep -o 'User is deactivated' /tmp/e2e_body)" "403 User is deactivated"
 
+rm -rf "$MEMBERS_DIR"
 echo "== $pass passed, $fail failed"
 [ "$fail" = 0 ]

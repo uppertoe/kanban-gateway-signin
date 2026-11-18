@@ -19,10 +19,24 @@ services:
       - GATEWAY_PROJECT_OWNER_GROUPS=planka-owners
       - GATEWAY_BOARD_USER_GROUPS=planka-users
       - GATEWAY_LOGOUT_URL=https://auth.example.org/logout?rd=http://localhost:1337/
+      # Board places from gateway groups: off until run.sh sets BOARDS_FILE
+      # to the snippet it writes into MEMBERS_DIR.
+      - GATEWAY_BOARDS_FILE=${BOARDS_FILE:-}
+      - GATEWAY_MEMBERS_URL=http://members:8081
+      - GATEWAY_MEMBERS_TOKEN=${PLANKA_MEMBERS_TOKEN:-e2e-members-token-0123456789abcdef0123}
+      - GATEWAY_BOARD_SYNC_INTERVAL=5
       - DEFAULT_ADMIN_EMAIL=admin@example.org
       - DEFAULT_ADMIN_PASSWORD=seed-password-123
       - DEFAULT_ADMIN_NAME=Seed Admin
       - DEFAULT_ADMIN_USERNAME=seedadmin
+    volumes: ["${MEMBERS_DIR:-./members-data}:/boards:ro"]
+  members:
+    # Stand-in for the gateway members endpoint (members.cjs).
+    image: node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8
+    command: ["node", "/e2e/members.cjs"]
+    volumes: ["./:/e2e:ro", "${MEMBERS_DIR:-./members-data}:/data:ro"]
+    environment:
+      - MEMBERS_TOKEN=e2e-members-token-0123456789abcdef0123
   browser:
     # The browser check (description.cjs). It shares the planka container's
     # network, so the page and its socket reach PLANKA at its own BASE_URL.
