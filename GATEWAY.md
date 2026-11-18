@@ -156,7 +156,8 @@ usual webhooks. When the snippet cannot be read, a board line cannot be used,
 or board lines are present without a members token of at least 32
 characters, PLANKA logs the problem at start-up, keeps running, and leaves the
 board sync off. The gateway serves a group to PLANKA only after an
-administrator has approved that pair on the gateway's Access page; until then
+administrator has approved that pair on the gateway's App feeds page
+(`/admin/app-feeds`); until then
 PLANKA's reads are refused and its places are left as they are.
 
 ## What the modification changes
