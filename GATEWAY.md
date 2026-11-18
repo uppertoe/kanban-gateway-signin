@@ -54,6 +54,10 @@ configured groups cannot use PLANKA. Project and board permissions are managed i
 | `GATEWAY_PROJECT_OWNER_GROUPS` | Gateway groups whose members become Project Owner. |
 | `GATEWAY_BOARD_USER_GROUPS` | Gateway groups whose members become Board User. |
 | `GATEWAY_LOGOUT_URL` | Where the browser goes after signing out of PLANKA. |
+| `GATEWAY_BOARDS_FILE` | The server's Caddy snippet for PLANKA, whose members markers link boards to gateway groups (see below). Optional. |
+| `GATEWAY_MEMBERS_URL` | The gateway members endpoint. `http://auth-members:8081` by default. |
+| `GATEWAY_MEMBERS_TOKEN` | PLANKA's token for the members endpoint. At least 32 characters. |
+| `GATEWAY_BOARD_SYNC_INTERVAL` | Seconds between runs of the board sync. 300 by default, at least 5. |
 
 Group lists are separated by commas or spaces. A person in several groups gets
 the highest role. PLANKA refuses to start when `GATEWAY_AUTH=true` and the
@@ -62,6 +66,96 @@ secret is short or no group is configured.
 The proxy must strip any client-supplied `Remote-*` and `X-Gateway-Secret`
 headers before it adds its own, and PLANKA must not be reachable except
 through the proxy.
+
+## Board places from gateway groups
+
+A board can take its members from a gateway group. Each linked board is
+written once, as a members marker in the server's Caddy snippet for PLANKA:
+
+```
+# scaffold-members: rch-registrars -- board "Registrars" in "Teaching" as editor
+# scaffold-members: rch-consultants, rch-fellows -- board "Registrars" in "Teaching" as commenter
+```
+
+The scaffold reads the same line to give PLANKA its private network to the
+gateway and the gateway's permission to share those groups, so nothing is
+entered twice. PLANKA reads the snippet from `GATEWAY_BOARDS_FILE` (the
+server mounts it read-only). The role is `editor`, `commenter` (a viewer who
+may comment) or `viewer`. A person in more than one group linked to a board
+gets the strongest place.
+
+PLANKA reads each linked group from the gateway's members endpoint 15 seconds
+after start-up, then every `GATEWAY_BOARD_SYNC_INTERVAL` seconds (300 by
+default), and a few seconds after the gateway creates an account. At each run:
+
+- Every member of a linked group who has no PLANKA account gets one, named
+  from the address (`tom.darling2@…` becomes "Tom Darling"), so that they can
+  be put on cards before they first sign in. The account starts as a Board
+  User with no password; at first sign-in the person is matched by email and
+  their groups set the role. To sign in at all, the group must also admit
+  them to PLANKA, for example by being included in `planka-users` on the
+  gateway's Groups page.
+- PLANKA only ever uses a project and board it created itself. For a new
+  marker it creates the project (shared) and the board, and records both in
+  `gateway_board_link`; from then on it uses that board whatever it is
+  called, so renaming it does no harm, and a board that someone deletes is
+  created again in the recorded project. The longest-standing active
+  administrator owns what the sync creates and is an editor on each new board,
+  because PLANKA needs a real account as the creator. When a project of the
+  marker's name already exists, PLANKA never takes it over, whoever made it:
+  the marker waits, with an error logged, until that project is renamed. This
+  means nobody can prepare a board, its members or its notification services
+  in advance for the sync to give a group to. It also means that someone who
+  creates a project with a marker's name first can stop that marker from
+  being served; the error in the log names the project to rename.
+- Each marker needs a project of its own. Two markers that name the same
+  project with different boards cannot both be served, because the second
+  finds a project the sync did not create for it, so it waits with an error.
+  Several groups can share one board by naming them on one marker.
+- The sync records a new project the moment it creates it, so a run cut
+  short before the board is made finds its own project next time.
+- Members of the group get a place on the board, and a place the group gave
+  is removed once the person leaves the group.
+
+Each place a group gives is recorded in `gateway_board_grant`, and only those
+places are ever changed or removed:
+
+- A place with no record was added by hand and is left alone, even when its
+  holder is in the group.
+- A group place that someone removes by hand is put back at the next run,
+  because the group decides those places. To take someone off for good,
+  remove them from the group.
+- A role that someone changes by hand on a group place is set back to the
+  marker's role at the next run, for the same reason.
+- A person whom an administrator has deactivated loses their group places.
+- When a group cannot be read, its places are left exactly as they are. When
+  a group that has given places comes back empty, nobody is removed and
+  PLANKA logs a warning, since an empty answer is far more likely a fault
+  than a whole group leaving at once.
+- When a recorded board cannot be found or created for a run, its group
+  places are held as they are, so they never turn into places added by hand.
+- Removing a marker keeps the places it gave, which then count as places
+  added by hand. To take those people off, remove them in PLANKA. Boards,
+  projects and accounts are never deleted.
+- Accounts are created for every member of a linked group, whether or not the
+  gateway admits them to PLANKA yet. This is deliberate: people can be put on
+  cards before they first sign in. They can sign in once the group is
+  admitted, for example by being included in `planka-users`.
+- Rolling back the migration removes the record of group places and links, so
+  after re-applying it every existing place counts as added by hand.
+- A members marker whose text after `--` is not a board line is ignored, with
+  a warning at start-up.
+
+Group names in a marker use the scaffold's rule: lower-case letters, digits,
+hyphens and underscores, starting with a letter or digit.
+
+Changes are made as the gateway actor (`_gateway`), are logged, and send the
+usual webhooks. When the snippet cannot be read, a board line cannot be used,
+or board lines are present without a members token of at least 32
+characters, PLANKA logs the problem at start-up, keeps running, and leaves the
+board sync off. The gateway serves a group to PLANKA only after an
+administrator has approved that pair on the gateway's Access page; until then
+PLANKA's reads are refused and its places are left as they are.
 
 ## What the modification changes
 
@@ -82,6 +176,14 @@ All new files carry a header saying that they are a local modification.
   role starts at Board User until the person's groups set it at their first
   sign-in); the bootstrap response (`gateway` field);
   the client login saga, logout service and token API.
+- New: board places from gateway groups: `server/utils/gateway-board-groups.js`
+  (the board markers, the accounts to create and the plan for each run, with tests in
+  `server/test/utils/gateway-board-groups.test.js`), the `gateway-board-sync`
+  hook, which reads the members endpoint and applies the plan, and the
+  migration `20261116120000_add_gateway_board_grants`, which adds the
+  `gateway_board_link` and `gateway_board_grant` tables. The gateway sign-in helper asks for a run after
+  creating an account, and `nameFromEmail` in `server/utils/gateway-identity.js`
+  drops a trailing number and keeps a hyphenated surname's hyphen.
 - Changed: upstream migration `20260807120000_remove_single_sign_on_support`
   no longer deactivates accounts that used single sign-on. Those accounts keep
   signing in, matched by email.

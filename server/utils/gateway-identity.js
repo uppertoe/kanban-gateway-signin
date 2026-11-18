@@ -117,13 +117,20 @@ const resolveVouchedRole = (identity, userEmail, roleGroups) => {
 
 // "jane.citizen@example.org" -> "Jane Citizen". Only used when an account is
 // first created; the person can change it in PLANKA afterwards.
+// A display name from a firstname.lastname address. A number that IT adds to
+// tell two people apart (tom.darling2) is dropped, and a hyphenated surname
+// keeps its hyphen.
+const capitalise = (word) => word.charAt(0).toUpperCase() + word.slice(1);
+
 const nameFromEmail = (email) => {
   const localPart = email.split('@')[0];
 
   const name = localPart
-    .split(/[._-]+/)
+    .toLowerCase()
+    .replace(/([a-z])[0-9]{1,2}$/, '$1')
+    .split(/[._]+/)
     .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .map((word) => word.split('-').filter(Boolean).map(capitalise).join('-'))
     .join(' ');
 
   return name || localPart;

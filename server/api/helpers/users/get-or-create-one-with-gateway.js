@@ -39,7 +39,7 @@ module.exports = {
     const user = await User.qm.getOneByEmail(email);
 
     if (!user) {
-      return sails.helpers.users.createOne
+      const created = await sails.helpers.users.createOne
         .with({
           values: {
             email,
@@ -52,6 +52,14 @@ module.exports = {
         .intercept('emailAlreadyInUse', 'emailAlreadyInUse')
         .intercept('usernameAlreadyInUse', 'usernameAlreadyInUse')
         .intercept('activeLimitReached', 'activeLimitReached');
+
+      // A new person's boards from their gateway groups (gateway-board-sync).
+      const boardSync = sails.hooks && sails.hooks['gateway-board-sync'];
+      if (boardSync) {
+        boardSync.requestSync();
+      }
+
+      return created;
     }
 
     // An account that an administrator has deactivated stays out, even while
