@@ -5,6 +5,7 @@ const {
   parseList,
   readGatewayIdentity,
   resolveRole,
+  resolveIdentityRole,
   resolveVouchedRole,
   nameFromEmail,
 } = require('../../utils/gateway-identity');
@@ -83,6 +84,88 @@ describe('gateway-identity', () => {
       delete h['remote-groups'];
       expect(readGatewayIdentity(h, SECRET).groups).to.deep.equal([]);
     });
+
+    it('ignores a Remote-Roles header while TRUST_REMOTE_ROLES is off', () => {
+      const forged = headers({ 'remote-roles': 'admin' });
+      expect(readGatewayIdentity(forged, SECRET)).to.not.have.property('roles');
+      expect(readGatewayIdentity(forged, SECRET, { trustRoles: false })).to.not.have.property(
+        'roles',
+      );
+    });
+
+    it('reads Remote-Roles when trusted and the header is present', () => {
+      expect(
+        readGatewayIdentity(headers({ 'remote-roles': 'owner, admin' }), SECRET, {
+          trustRoles: true,
+        }).roles,
+      ).to.deep.equal(['owner', 'admin']);
+      expect(
+        readGatewayIdentity(headers({ 'remote-roles': '' }), SECRET, { trustRoles: true }).roles,
+      ).to.deep.equal([]);
+    });
+
+    it('leaves roles out when trusted but the header is absent', () => {
+      expect(readGatewayIdentity(headers(), SECRET, { trustRoles: true })).to.not.have.property(
+        'roles',
+      );
+    });
+
+    it('reads a Remote-Roles header that arrives as an array as no roles', () => {
+      expect(
+        readGatewayIdentity(headers({ 'remote-roles': ['admin', 'owner'] }), SECRET, {
+          trustRoles: true,
+        }).roles,
+      ).to.deep.equal([]);
+    });
+
+    it('still refuses a missing secret when roles are trusted', () => {
+      const h = headers({ 'remote-roles': 'admin' });
+      delete h['x-gateway-secret'];
+      expect(readGatewayIdentity(h, SECRET, { trustRoles: true })).to.equal(null);
+    });
+  });
+
+  describe('resolveIdentityRole', () => {
+    const roleGroups = {
+      admin: ['planka-admins'],
+      projectOwner: ['planka-owners'],
+      boardUser: ['planka-users'],
+    };
+
+    it('lets Remote-Roles alone decide when present', () => {
+      expect(resolveIdentityRole({ groups: [], roles: ['admin'] }, roleGroups)).to.equal('admin');
+      expect(resolveIdentityRole({ groups: [], roles: ['owner'] }, roleGroups)).to.equal(
+        'projectOwner',
+      );
+      expect(resolveIdentityRole({ groups: [], roles: ['owner', 'admin'] }, roleGroups)).to.equal(
+        'admin',
+      );
+      expect(resolveIdentityRole({ groups: [], roles: ['user'] }, roleGroups)).to.equal(
+        'boardUser',
+      );
+      expect(resolveIdentityRole({ groups: [], roles: [] }, roleGroups)).to.equal('boardUser');
+    });
+
+    it('does not let a group grant a higher role when Remote-Roles is present', () => {
+      expect(
+        resolveIdentityRole({ groups: ['planka-admins', 'admin'], roles: ['user'] }, roleGroups),
+      ).to.equal('boardUser');
+    });
+
+    it('uses the role groups when Remote-Roles is absent', () => {
+      expect(resolveIdentityRole({ groups: ['planka-owners'] }, roleGroups)).to.equal(
+        'projectOwner',
+      );
+      expect(resolveIdentityRole({ groups: ['cms-editors'] }, roleGroups)).to.equal(null);
+    });
+
+    it('gives a forged admin role nothing while TRUST_REMOTE_ROLES is off', () => {
+      const identity = readGatewayIdentity(
+        headers({ 'remote-groups': 'planka-users', 'remote-roles': 'admin' }),
+        SECRET,
+      );
+      expect(resolveIdentityRole(identity, roleGroups)).to.equal('boardUser');
+    });
   });
 
   describe('resolveRole', () => {
@@ -136,6 +219,16 @@ describe('gateway-identity', () => {
       expect(
         resolveVouchedRole(identity(['cms-editors']), 'jane@example.org', roleGroups),
       ).to.equal(null);
+    });
+
+    it('follows Remote-Roles for the same person when present', () => {
+      expect(
+        resolveVouchedRole(
+          { email: 'jane@example.org', groups: ['cms-editors'], roles: ['owner'] },
+          'jane@example.org',
+          roleGroups,
+        ),
+      ).to.equal('projectOwner');
     });
 
     it('returns null without a trusted identity', () => {

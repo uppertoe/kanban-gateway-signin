@@ -5,7 +5,7 @@
  */
 
 const { getGatewayActor } = require('../../../utils/gateway-actor');
-const { nameFromEmail, resolveRole } = require('../../../utils/gateway-identity');
+const { nameFromEmail, resolveIdentityRole } = require('../../../utils/gateway-identity');
 
 module.exports = {
   inputs: {
@@ -27,11 +27,11 @@ module.exports = {
   },
 
   async fn(inputs) {
-    const { email, groups } = inputs.identity;
+    const { email } = inputs.identity;
 
-    // The role is set by gateway group membership at every sign-in, and the
-    // current-user hook keeps it in step on later requests.
-    const role = resolveRole(groups, sails.config.custom.gatewayRoleGroups);
+    // The role is set by the gateway's app roles or group membership at every
+    // sign-in, and the current-user hook keeps it in step on later requests.
+    const role = resolveIdentityRole(inputs.identity, sails.config.custom.gatewayRoleGroups);
     if (!role) {
       throw 'notPermitted';
     }

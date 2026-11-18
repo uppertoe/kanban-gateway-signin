@@ -18,6 +18,7 @@ services:
       - GATEWAY_ADMIN_GROUPS=planka-admins
       - GATEWAY_PROJECT_OWNER_GROUPS=planka-owners
       - GATEWAY_BOARD_USER_GROUPS=planka-users
+      - TRUST_REMOTE_ROLES=${TRUST_REMOTE_ROLES:-}
       - GATEWAY_LOGOUT_URL=https://auth.example.org/logout?rd=http://localhost:1337/
       # Board places from gateway groups: off until run.sh sets BOARDS_FILE
       # to the snippet it writes into MEMBERS_DIR.

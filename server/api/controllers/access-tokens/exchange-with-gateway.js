@@ -98,14 +98,16 @@ module.exports = {
   },
 
   async fn(inputs) {
-    const { gatewayAuthEnabled, gatewayAuthSecret } = sails.config.custom;
+    const { gatewayAuthEnabled, gatewayAuthSecret, gatewayTrustRoles } = sails.config.custom;
 
     if (!gatewayAuthEnabled) {
       throw Errors.GATEWAY_AUTH_DISABLED;
     }
 
     const remoteAddress = getRemoteAddress(this.req);
-    const identity = readGatewayIdentity(this.req.headers, gatewayAuthSecret);
+    const identity = readGatewayIdentity(this.req.headers, gatewayAuthSecret, {
+      trustRoles: gatewayTrustRoles,
+    });
 
     if (!identity) {
       sails.log.warn(`Gateway sign-in without a trusted identity! (IP: ${remoteAddress})`);

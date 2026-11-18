@@ -114,8 +114,18 @@ const gatewayConfig = (() => {
     boardUser: gatewayIdentity.parseList(process.env.GATEWAY_BOARD_USER_GROUPS),
   };
 
-  if (Object.values(roleGroups).every((groups) => groups.length === 0)) {
-    throw new Error('GATEWAY_AUTH=true needs at least one of the GATEWAY_*_GROUPS settings');
+  // TRUST_REMOTE_ROLES lets the gateway's Remote-Roles decide the role. Turn
+  // it on only once the proxy strips a client-sent Remote-Roles on every route.
+  const trustRolesValue = (process.env.TRUST_REMOTE_ROLES || '').trim().toLowerCase();
+  if (!['', '0', 'false', '1', 'true'].includes(trustRolesValue)) {
+    throw new Error('TRUST_REMOTE_ROLES must be true or false');
+  }
+  const trustRoles = trustRolesValue === '1' || trustRolesValue === 'true';
+
+  if (!trustRoles && Object.values(roleGroups).every((groups) => groups.length === 0)) {
+    throw new Error(
+      'GATEWAY_AUTH=true needs TRUST_REMOTE_ROLES or at least one of the GATEWAY_*_GROUPS settings',
+    );
   }
 
   // Boards whose places follow gateway groups (see utils/gateway-board-groups):
@@ -181,6 +191,7 @@ const gatewayConfig = (() => {
     gatewayAuthEnabled,
     gatewayAuthSecret,
     gatewayRoleGroups: roleGroups,
+    gatewayTrustRoles: trustRoles,
     gatewayLogoutUrl: process.env.GATEWAY_LOGOUT_URL || null,
     gatewayBoardSync: boardSync,
     gatewayBoardSyncError: boardSyncError,
