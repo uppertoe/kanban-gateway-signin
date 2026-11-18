@@ -190,6 +190,13 @@ All new files carry a header saying that they are a local modification.
 
 ## Other changes
 
+- An uploaded project background is stored as WebP, no more than 2560
+  pixels on its longer side (quality 80), with its 360-pixel picker copy
+  also in WebP (quality 75), instead of as the uploaded file
+  (`server/api/helpers/background-images/process-uploaded-file.js`). A
+  smaller image is not enlarged, and an animated one stays animated.
+  Backgrounds uploaded before this change are left as they are.
+
 - PLANKA's automatic sign-out after a period without activity is off while
   gateway sign-in is on, and its setting is not shown in a person's
   preferences (`client/src/sagas/core/services/auto-logout.js`,
