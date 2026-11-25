@@ -30,7 +30,17 @@ services:
       - DEFAULT_ADMIN_PASSWORD=seed-password-123
       - DEFAULT_ADMIN_NAME=Seed Admin
       - DEFAULT_ADMIN_USERNAME=seedadmin
+      # Branded notification emails, caught by the mail service below.
+      - SMTP_HOST=mail
+      - SMTP_PORT=1025
+      - SMTP_FROM=Example Boards <boards@example.org>
+      - EMAIL_BRAND_NAME=Example Anaesthesia
+      - EMAIL_ACCENT_COLOR=#1e4468
     volumes: ["${MEMBERS_DIR:-./members-data}:/boards:ro"]
+  mail:
+    # Catches the notification emails; run.sh reads them over its API.
+    image: axllent/mailpit:v1.29@sha256:757f22b56c1da03570afdb3d259effe5091018008a81bbedc8158cee7e16fdbc
+    ports: ["127.0.0.1:${E2E_MAIL_PORT:-18025}:8025"]
   members:
     # Stand-in for the gateway members endpoint (members.cjs).
     image: node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8

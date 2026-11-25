@@ -268,6 +268,14 @@ module.exports.custom = {
   smtpPassword: process.env.SMTP_PASSWORD,
   smtpFrom: process.env.SMTP_FROM,
 
+  // Branded notification emails (local modification): see GATEWAY.md.
+  emailBranding: {
+    name: process.env.EMAIL_BRAND_NAME,
+    accentColor: process.env.EMAIL_ACCENT_COLOR,
+    logoUrl: process.env.EMAIL_LOGO_URL,
+    subjectPrefix: process.env.EMAIL_SUBJECT_PREFIX,
+  },
+
   appriseEnabled: process.env.APPRISE_ENABLED !== 'false',
   appriseAllowedSchemas: envToArray(process.env.APPRISE_ALLOWED_SCHEMAS),
   appriseBlockedSchemas: envToArray(process.env.APPRISE_BLOCKED_SCHEMAS),

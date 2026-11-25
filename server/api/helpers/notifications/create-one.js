@@ -136,7 +136,7 @@ const buildAndSendNotifications = async (services, board, card, notification, ac
   );
 };
 
-// TODO: use templates (views) to build html
+// Branded emails (local modification): helpers/notifications/build-email.js.
 const buildAndSendEmail = async (
   transporter,
   board,
@@ -146,63 +146,21 @@ const buildAndSendEmail = async (
   notifiableUser,
   t,
 ) => {
-  const cardLink = `<a href="${sails.config.custom.baseUrl}/cards/${card.id}">${escapeHtml(card.name)}</a>`;
-  const boardLink = `<a href="${sails.config.custom.baseUrl}/boards/${board.id}">${escapeHtml(board.name)}</a>`;
-
-  let html;
-  switch (notification.type) {
-    case Notification.Types.MOVE_CARD: {
-      const fromListName = sails.helpers.lists.resolveName(notification.data.fromList, t);
-      const toListName = sails.helpers.lists.resolveName(notification.data.toList, t);
-
-      html = `<p>${t(
-        '%s moved %s from %s to %s on %s',
-        escapeHtml(actorUser.name),
-        cardLink,
-        escapeHtml(fromListName),
-        escapeHtml(toListName),
-        boardLink,
-      )}</p>`;
-
-      break;
-    }
-    case Notification.Types.COMMENT_CARD:
-      html = `<p>${t(
-        '%s left a new comment to %s on %s',
-        escapeHtml(actorUser.name),
-        cardLink,
-        boardLink,
-      )}</p><p>${escapeHtml(mentionMarkupToText(notification.data.text))}</p>`;
-
-      break;
-    case Notification.Types.ADD_MEMBER_TO_CARD:
-      html = `<p>${t(
-        '%s added you to %s on %s',
-        escapeHtml(actorUser.name),
-        cardLink,
-        boardLink,
-      )}</p>`;
-
-      break;
-    case Notification.Types.MENTION_IN_COMMENT:
-      html = `<p>${t(
-        '%s mentioned you in %s on %s',
-        escapeHtml(actorUser.name),
-        cardLink,
-        boardLink,
-      )}</p><p>${escapeHtml(mentionMarkupToText(notification.data.text))}</p>`;
-
-      break;
-    default:
-      return;
-  }
-
-  await sails.helpers.utils.sendEmail.with({
-    transporter,
-    html,
-    to: notifiableUser.email,
-    subject: buildTitle(notification, t),
+  const email = await sails.helpers.notifications.buildEmail.with({
+    board,
+    card,
+    notification,
+    actorUser,
+    notifiableUser,
+    t,
   });
+
+  if (email) {
+    await sails.helpers.utils.sendEmail.with({
+      ...email,
+      transporter,
+    });
+  }
 
   transporter.close();
 };

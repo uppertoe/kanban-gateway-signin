@@ -226,6 +226,25 @@ All new files carry a header saying that they are a local modification.
   (`client/src/components/users/UserActionsStep/UserActionsStep.jsx`). No
   licensing or copyright notice is affected.
 
+- Notification emails are branded for the deployment and say why they were
+  sent (`server/utils/notification-email.js`, called through
+  `server/api/helpers/notifications/build-email.js` from both notification
+  helpers). Each email names the card in its subject, quotes the comment,
+  links to the card with a button, carries a plain-text part, and threads
+  with the other emails about the same card. The footer tells the reader
+  whether they were sent it as a card subscriber, a board subscriber, a
+  mentioned person or a new card member. The wording is English only. Emails
+  still need `SMTP_*` set; these settings only change how they look:
+
+  | Variable | Meaning |
+  |---|---|
+  | `EMAIL_BRAND_NAME` | The name in the header and the footer. `PLANKA` by default. |
+  | `EMAIL_ACCENT_COLOR` | The colour of the button, the top rule and the quote bar, as `#rgb` or `#rrggbb`. A dark blue by default. |
+  | `EMAIL_LOGO_URL` | An `http(s)` image shown in the header in place of the name. Optional. |
+  | `EMAIL_SUBJECT_PREFIX` | Text put before every subject. None by default. |
+
+  A malformed colour or logo address is ignored in favour of the default.
+
 ## Keeping up with upstream
 
 The modification lives on `main`, and each upstream release is merged into

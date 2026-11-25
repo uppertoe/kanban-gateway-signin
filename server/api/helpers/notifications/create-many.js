@@ -136,66 +136,6 @@ const buildAndSendNotifications = async (services, board, card, notification, ac
   );
 };
 
-// TODO: use templates (views) to build html
-const buildEmail = (board, card, notification, actorUser, notifiableUser, t) => {
-  const cardLink = `<a href="${sails.config.custom.baseUrl}/cards/${card.id}">${escapeHtml(card.name)}</a>`;
-  const boardLink = `<a href="${sails.config.custom.baseUrl}/boards/${board.id}">${escapeHtml(board.name)}</a>`;
-
-  let html;
-  switch (notification.type) {
-    case Notification.Types.MOVE_CARD: {
-      const fromListName = sails.helpers.lists.resolveName(notification.data.fromList, t);
-      const toListName = sails.helpers.lists.resolveName(notification.data.toList, t);
-
-      html = `<p>${t(
-        '%s moved %s from %s to %s on %s',
-        escapeHtml(actorUser.name),
-        cardLink,
-        escapeHtml(fromListName),
-        escapeHtml(toListName),
-        boardLink,
-      )}</p>`;
-
-      break;
-    }
-    case Notification.Types.COMMENT_CARD:
-      html = `<p>${t(
-        '%s left a new comment to %s on %s',
-        escapeHtml(actorUser.name),
-        cardLink,
-        boardLink,
-      )}</p><p>${escapeHtml(mentionMarkupToText(notification.data.text))}</p>`;
-
-      break;
-    case Notification.Types.ADD_MEMBER_TO_CARD:
-      html = `<p>${t(
-        '%s added you to %s on %s',
-        escapeHtml(actorUser.name),
-        cardLink,
-        boardLink,
-      )}</p>`;
-
-      break;
-    case Notification.Types.MENTION_IN_COMMENT:
-      html = `<p>${t(
-        '%s mentioned you in %s on %s',
-        escapeHtml(actorUser.name),
-        cardLink,
-        boardLink,
-      )}</p><p>${escapeHtml(mentionMarkupToText(notification.data.text))}</p>`;
-
-      break;
-    default:
-      return null; // TODO: throw error?
-  }
-
-  return {
-    html,
-    to: notifiableUser.email,
-    subject: buildTitle(notification, t),
-  };
-};
-
 const sendEmails = async (transporter, emails) => {
   await Promise.all(
     emails.map((email) =>
@@ -313,13 +253,15 @@ module.exports = {
         notifiableUsers.forEach(async (notifiableUser) => {
           const t = sails.helpers.utils.makeTranslator(notifiableUser.language);
 
-          const emails = notificationsByUserId[notifiableUser.id].flatMap((notification) => {
-            const values = valuesById[notification.id];
+          const userNotifications = notificationsByUserId[notifiableUser.id];
 
-            if (notificationServicesByUserId[notifiableUser.id]) {
-              const services = notificationServicesByUserId[notifiableUser.id].map(
-                (notificationService) => _.pick(notificationService, ['url', 'format']),
-              );
+          if (notificationServicesByUserId[notifiableUser.id]) {
+            const services = notificationServicesByUserId[notifiableUser.id].map(
+              (notificationService) => _.pick(notificationService, ['url', 'format']),
+            );
+
+            userNotifications.forEach((notification) => {
+              const values = valuesById[notification.id];
 
               buildAndSendNotifications(
                 services,
@@ -329,21 +271,32 @@ module.exports = {
                 values.creatorUser,
                 t,
               );
-            }
+            });
+          }
 
-            if (transporter) {
-              return buildEmail(
-                inputs.board,
-                values.card,
+          // Branded emails (local modification): helpers/notifications/build-email.js.
+          const emails = [];
+
+          if (transporter) {
+            // eslint-disable-next-line no-restricted-syntax
+            for (const notification of userNotifications) {
+              const values = valuesById[notification.id];
+
+              // eslint-disable-next-line no-await-in-loop
+              const email = await sails.helpers.notifications.buildEmail.with({
+                board: inputs.board,
+                card: values.card,
                 notification,
-                values.creatorUser,
+                actorUser: values.creatorUser,
                 notifiableUser,
                 t,
-              );
-            }
+              });
 
-            return [];
-          });
+              if (email) {
+                emails.push(email);
+              }
+            }
+          }
 
           if (emails.length > 0) {
             sendEmails(transporter, emails);
