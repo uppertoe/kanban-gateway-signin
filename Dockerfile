@@ -13,7 +13,7 @@ RUN  npm install \
   && npm prune --production
 
 # Stage 2: Client build
-FROM node:24@sha256:8fa96264f302f58bbb13aa7339c541547b56975766ce956c875da149452a3e40 AS client
+FROM node:24@sha256:49f7adaf9f1574bc45c20ea317139b39a59d7e758d0e93745e112fd85cb42623 AS client
 
 WORKDIR /app
 
