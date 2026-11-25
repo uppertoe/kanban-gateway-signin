@@ -21,11 +21,20 @@ module.exports = {
       type: 'string',
       required: true,
     },
+    // Branded emails (local modification): a plain-text part, and a thread id
+    // shared by every email about one card.
+    text: {
+      type: 'string',
+    },
+    references: {
+      type: 'string',
+    },
   },
 
   async fn(inputs) {
     try {
-      const info = await inputs.transporter.sendMail(inputs);
+      const { transporter, ...message } = inputs;
+      const info = await transporter.sendMail(message);
 
       sails.log.info(`Email sent: ${info.messageId}`);
     } catch (error) {

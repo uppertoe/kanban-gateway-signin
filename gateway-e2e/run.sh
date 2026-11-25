@@ -96,6 +96,19 @@ if [ -z "${E2E_SKIP_BROWSER:-}" ]; then
   check "description saved" "$(sql "select description from card where id='$card'")" "Edited by a member with no username"
 fi
 
+# Branded notification emails. Adding Sam to the card subscribes Sam to it, so
+# the admin's comment that follows reaches Sam as well.
+M=http://127.0.0.1:${E2E_MAIL_PORT:-18025}
+curl -s -X DELETE $M/api/v1/messages >/dev/null
+admin /cards/$card/card-memberships "{\"userId\":\"$samid\"}" >/dev/null
+admin /cards/$card/comments '{"text":"Please check the dosing table."}' >/dev/null
+subjects=""; for i in $(seq 1 15); do subjects=$(curl -s "$M/api/v1/messages" | grep -o '"Subject":"[^"]*"' | cut -d'"' -f4 | sort | tr '\n' '|'); [ "$(printf %s "$subjects" | tr -cd '|' | wc -c | tr -d ' ')" -ge 2 ] && break; sleep 1; done
+check "added-to-card and comment emails sent with the card in the subject" "$subjects" "Seed Admin added you to Card|Seed Admin commented on Card|"
+mid=$(curl -s "$M/api/v1/search?query=subject:commented" | grep -o '"ID":"[^"]*"' | head -1 | cut -d'"' -f4)
+msg=$(curl -s "$M/api/v1/message/$mid")
+check "comment email is branded, quotes the comment and has a plain-text part" "$(printf %s "$msg" | grep -c 'Example Anaesthesia') $(printf %s "$msg" | grep -c '#1e4468') $(printf %s "$msg" | grep -c 'Please check the dosing table.') $(printf %s "$msg" | grep -o '"Text":"[^"]' | wc -l | tr -d ' ')" "1 1 1 1"
+check "comment email threads on the card" "$(curl -s "$M/api/v1/message/$mid/headers" | grep -o "\"References\":\[\"[^\"]*card-$card@localhost" | grep -o "card-$card@localhost")" "card-$card@localhost"
+
 # Under gateway sign-in an administrator adds a person by email and name
 # alone: the account has no password, and its role starts at Board User until
 # the person's groups set it at their first sign-in. A password and role sent
